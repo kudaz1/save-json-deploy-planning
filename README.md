@@ -11,7 +11,7 @@ npm install
 
 ## Uso
 
-### Iniciar el servidor
+### Iniciar el servidor localmente
 
 ```bash
 npm start
@@ -23,6 +23,18 @@ npm run dev
 ```
 
 El servidor se ejecutará en `http://localhost:3000`
+
+### Despliegue en Railway
+
+La API está desplegada en Railway. Para obtener el endpoint público:
+
+1. Ve a tu proyecto en Railway
+2. En la sección "Architecture", haz clic en el servicio "save-json-deploy-planning"
+3. Ve a la pestaña "Settings"
+4. En la sección "Networking", activa "Generate Domain" para exponer el servicio públicamente
+5. Railway generará automáticamente una URL pública como: `https://save-json-deploy-planning-production.up.railway.app`
+
+**Endpoint público**: Una vez expuesto, podrás usar la URL generada por Railway para hacer peticiones a la API.
 
 ### Endpoints
 
