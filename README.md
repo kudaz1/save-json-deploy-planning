@@ -1,6 +1,6 @@
 # API para Guardar Archivos JSON y Ejecutar Control-M
 
-Esta API permite recibir un nombre y un JSON, y automáticamente ejecutar la API de Control-M correspondiente enviando el JSON directamente como archivo según el ambiente especificado.
+Esta API permite recibir un nombre y un JSON, y retorna toda la información necesaria para que el cliente ejecute directamente la API de Control-M desde su máquina local.
 
 ## Instalación
 
@@ -40,7 +40,7 @@ La API está desplegada en Railway. Para obtener el endpoint público:
 
 #### POST /save-json
 
-Envía directamente el JSON a la API de Control-M correspondiente según el ambiente, sin necesidad de guardar archivos físicamente.
+Retorna toda la información necesaria para que el cliente ejecute directamente la API de Control-M desde su máquina local.
 
 **Parámetros del body:**
 - `ambiente` (string): Ambiente donde se ejecuta - solo permite "DEV" o "QA"
@@ -69,16 +69,23 @@ curl -X POST http://localhost:3000/save-json \
 ```json
 {
   "success": true,
-  "message": "JSON enviado directamente a Control-M API",
+  "message": "Información de Control-M lista para ejecutar desde el cliente",
   "filename": "mi-archivo.json",
   "ambiente": "DEV",
   "token": "mi-token-123",
   "jsonSize": 156,
-  "controlMApi": {
-    "success": true,
-    "status": 200,
-    "data": { "deploymentId": "12345" },
-    "message": "API ejecutada exitosamente para ambiente DEV"
+  "controlMInfo": {
+    "url": "https://controlms1de01:8446/automation-api/deploy",
+    "method": "POST",
+    "headers": {
+      "Authorization": "Bearer mi-token-123"
+    },
+    "jsonData": { "jobType": "Job", "application": "MiApp" },
+    "filename": "mi-archivo.json"
+  },
+  "clientInstructions": {
+    "message": "Usa la información en controlMInfo para ejecutar la API de Control-M desde tu máquina local",
+    "example": "Ver documentación para ejemplos de implementación"
   }
 }
 ```
@@ -89,34 +96,80 @@ Endpoint de prueba que muestra información sobre la API y ejemplos de uso.
 
 ## Características
 
-- ✅ Envía directamente el JSON a Control-M sin guardar archivos físicamente
-- ✅ Valida que el JSON sea válido antes de enviarlo
+- ✅ Retorna información completa para ejecutar Control-M desde el cliente
+- ✅ Valida que el JSON sea válido antes de procesarlo
 - ✅ Selecciona automáticamente el servidor correcto según el ambiente (DEV/QA)
-- ✅ Envía el JSON como form-data a Control-M con Bearer token
-- ✅ Convierte el JSON a Buffer en memoria para envío eficiente
+- ✅ Distribuye la carga: API principal prepara, cliente ejecuta Control-M
+- ✅ Clientes disponibles en Node.js y Python
 - ✅ Manejo de errores completo
 - ✅ Soporte para CORS
 - ✅ Optimizado para entornos cloud (Railway, Heroku, etc.)
 
+## Uso del Cliente
+
+La API retorna toda la información necesaria para que ejecutes Control-M desde tu máquina local. Esto tiene varias ventajas:
+
+- **Distribución de carga**: Tu API principal solo prepara la información
+- **Ejecución local**: Control-M se ejecuta desde tu máquina, no desde el servidor
+- **Mayor control**: Puedes manejar la ejecución y errores localmente
+- **Menos dependencias**: El servidor no necesita conectarse a Control-M
+
+### Cliente Node.js
+
+```javascript
+const { processWithControlM } = require('./client-control-m');
+
+const result = await processWithControlM(
+    'https://tu-url-railway.up.railway.app/save-json',
+    {
+        ambiente: 'DEV',
+        token: 'tu-bearer-token',
+        filename: 'mi-archivo',
+        jsonData: { "jobType": "Job", "application": "MiApp" }
+    }
+);
+```
+
+### Cliente Python
+
+```python
+from client_control_m import ControlMClient
+
+client = ControlMClient()
+result = client.process_with_control_m(
+    'https://tu-url-railway.up.railway.app/save-json',
+    {
+        'ambiente': 'DEV',
+        'token': 'tu-bearer-token',
+        'filename': 'mi-archivo',
+        'jsonData': { "jobType": "Job", "application": "MiApp" }
+    }
+)
+```
+
 ## Integración con Control-M
 
-La API envía directamente el JSON a Control-M sin guardar archivos físicamente:
+La API prepara toda la información necesaria para que el cliente ejecute Control-M:
 
 - **Ambiente DEV**: `https://controlms1de01:8446/automation-api/deploy`
 - **Ambiente QA**: `https://controlms2qa01:8446/automation-api/deploy`
 
-La petición se realiza con:
+La petición se configura con:
 - **Authorization**: Bearer token (usando el campo `token` enviado)
 - **Content-Type**: multipart/form-data
 - **definitionsFile**: El JSON convertido a Buffer en memoria
 
+El cliente ejecuta la petición desde su máquina local usando la información proporcionada.
+
 ## Ventajas de esta implementación
 
-- **Sin archivos físicos**: El JSON se envía directamente en memoria
-- **Más eficiente**: No hay I/O de disco
+- **Distribución de carga**: El servidor solo prepara, el cliente ejecuta
+- **Sin archivos físicos**: El JSON se maneja directamente en memoria
+- **Más eficiente**: No hay I/O de disco en el servidor
 - **Cloud-friendly**: Funciona perfectamente en Railway, Heroku, etc.
-- **Más rápido**: Elimina el paso de guardar y leer archivos
+- **Mayor control**: El cliente maneja la ejecución y errores localmente
 - **Más seguro**: No deja archivos temporales en el servidor
+- **Escalabilidad**: El servidor no necesita conectarse a Control-M
 
 ## Manejo de errores
 

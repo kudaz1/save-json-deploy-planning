@@ -125,23 +125,33 @@ app.post('/save-json', async (req, res) => {
         // Ruta completa del archivo
         const filePath = path.join(controlMPath, fileName);
 
-        // Ejecutar la API de Control-M directamente con el JSON (sin guardar archivo)
-        const apiResult = await executeControlMApi(ambiente, token, parsedJson, filename);
+        // Preparar información para que el cliente ejecute Control-M directamente
+        const controlMInfo = {
+            url: ambiente === 'DEV' 
+                ? 'https://controlms1de01:8446/automation-api/deploy'
+                : 'https://controlms2qa01:8446/automation-api/deploy',
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
+            jsonData: parsedJson,
+            filename: fileName
+        };
 
-        // Opcionalmente guardar el archivo para debugging (comentado por defecto)
-        // fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2), 'utf8');
-        // console.log(`Archivo guardado: ${filePath} (Ambiente: ${ambiente}, Token: ${token})`);
-
-        console.log(`API ejecutada directamente para ambiente ${ambiente} con archivo: ${fileName}`);
+        console.log(`Información de Control-M preparada para ambiente ${ambiente} con archivo: ${fileName}`);
 
         res.json({
             success: true,
-            message: 'JSON enviado directamente a Control-M API',
+            message: 'Información de Control-M lista para ejecutar desde el cliente',
             filename: fileName,
             ambiente: ambiente,
             token: token,
-            controlMApi: apiResult,
-            jsonSize: JSON.stringify(parsedJson).length
+            jsonSize: JSON.stringify(parsedJson).length,
+            controlMInfo: controlMInfo,
+            clientInstructions: {
+                message: 'Usa la información en controlMInfo para ejecutar la API de Control-M desde tu máquina local',
+                example: 'Ver documentación para ejemplos de implementación'
+            }
         });
 
     } catch (error) {
