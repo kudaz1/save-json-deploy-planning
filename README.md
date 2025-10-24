@@ -1,6 +1,6 @@
 # API para Guardar Archivos JSON y Ejecutar Control-M
 
-Esta API permite recibir un nombre y un JSON, guardar ese JSON como archivo en el escritorio dentro de una carpeta llamada "controlM", y automáticamente ejecutar la API de Control-M correspondiente según el ambiente especificado.
+Esta API permite recibir un nombre y un JSON, y automáticamente ejecutar la API de Control-M correspondiente enviando el JSON directamente como archivo según el ambiente especificado.
 
 ## Instalación
 
@@ -40,7 +40,7 @@ La API está desplegada en Railway. Para obtener el endpoint público:
 
 #### POST /save-json
 
-Guarda un archivo JSON en el escritorio/controlM y ejecuta automáticamente la API de Control-M correspondiente según el ambiente.
+Envía directamente el JSON a la API de Control-M correspondiente según el ambiente, sin necesidad de guardar archivos físicamente.
 
 **Parámetros del body:**
 - `ambiente` (string): Ambiente donde se ejecuta - solo permite "DEV" o "QA"
@@ -69,11 +69,11 @@ curl -X POST http://localhost:3000/save-json \
 ```json
 {
   "success": true,
-  "message": "Archivo JSON guardado exitosamente y API ejecutada",
-  "filePath": "C:\\Users\\Usuario\\Desktop\\controlM\\mi-archivo.json",
+  "message": "JSON enviado directamente a Control-M API",
   "filename": "mi-archivo.json",
   "ambiente": "DEV",
   "token": "mi-token-123",
+  "jsonSize": 156,
   "controlMApi": {
     "success": true,
     "status": 200,
@@ -89,19 +89,18 @@ Endpoint de prueba que muestra información sobre la API y ejemplos de uso.
 
 ## Características
 
-- ✅ Crea automáticamente la carpeta "controlM" en el escritorio si no existe
-- ✅ Valida que el JSON sea válido antes de guardarlo
-- ✅ Agrega automáticamente la extensión .json al nombre del archivo
-- ✅ Ejecuta automáticamente la API de Control-M después de guardar el archivo
+- ✅ Envía directamente el JSON a Control-M sin guardar archivos físicamente
+- ✅ Valida que el JSON sea válido antes de enviarlo
 - ✅ Selecciona automáticamente el servidor correcto según el ambiente (DEV/QA)
-- ✅ Envía el archivo JSON como form-data a Control-M con Bearer token
+- ✅ Envía el JSON como form-data a Control-M con Bearer token
+- ✅ Convierte el JSON a Buffer en memoria para envío eficiente
 - ✅ Manejo de errores completo
 - ✅ Soporte para CORS
-- ✅ Formato JSON legible con indentación
+- ✅ Optimizado para entornos cloud (Railway, Heroku, etc.)
 
 ## Integración con Control-M
 
-Después de guardar el archivo JSON, la API ejecuta automáticamente:
+La API envía directamente el JSON a Control-M sin guardar archivos físicamente:
 
 - **Ambiente DEV**: `https://controlms1de01:8446/automation-api/deploy`
 - **Ambiente QA**: `https://controlms2qa01:8446/automation-api/deploy`
@@ -109,17 +108,15 @@ Después de guardar el archivo JSON, la API ejecuta automáticamente:
 La petición se realiza con:
 - **Authorization**: Bearer token (usando el campo `token` enviado)
 - **Content-Type**: multipart/form-data
-- **definitionsFile**: El archivo JSON guardado
+- **definitionsFile**: El JSON convertido a Buffer en memoria
 
-## Estructura de archivos generados
+## Ventajas de esta implementación
 
-Los archivos se guardan en:
-```
-{Usuario}/Desktop/controlM/
-├── archivo1.json
-├── archivo2.json
-└── ...
-```
+- **Sin archivos físicos**: El JSON se envía directamente en memoria
+- **Más eficiente**: No hay I/O de disco
+- **Cloud-friendly**: Funciona perfectamente en Railway, Heroku, etc.
+- **Más rápido**: Elimina el paso de guardar y leer archivos
+- **Más seguro**: No deja archivos temporales en el servidor
 
 ## Manejo de errores
 
@@ -148,11 +145,11 @@ Ejemplos de respuestas de error:
 ```json
 {
   "success": true,
-  "message": "Archivo JSON guardado exitosamente y API ejecutada",
-  "filePath": "C:\\Users\\Usuario\\Desktop\\controlM\\mi-archivo.json",
+  "message": "JSON enviado directamente a Control-M API",
   "filename": "mi-archivo.json",
   "ambiente": "DEV",
   "token": "mi-token-123",
+  "jsonSize": 156,
   "controlMApi": {
     "success": false,
     "error": "Request failed with status code 401",

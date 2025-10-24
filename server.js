@@ -27,7 +27,7 @@ function ensureDirectoryExists(dirPath) {
 }
 
 // Función para ejecutar la API según el ambiente
-async function executeControlMApi(ambiente, token, filePath) {
+async function executeControlMApi(ambiente, token, jsonData, filename) {
     try {
         // Determinar la URL según el ambiente
         const apiUrl = ambiente === 'DEV' 
@@ -36,9 +36,16 @@ async function executeControlMApi(ambiente, token, filePath) {
 
         console.log(`Ejecutando API para ambiente ${ambiente}: ${apiUrl}`);
 
-        // Crear form-data con el archivo
+        // Convertir JSON a string y crear buffer
+        const jsonString = JSON.stringify(jsonData, null, 2);
+        const jsonBuffer = Buffer.from(jsonString, 'utf8');
+
+        // Crear form-data con el buffer directamente
         const form = new FormData();
-        form.append('definitionsFile', fs.createReadStream(filePath));
+        form.append('definitionsFile', jsonBuffer, {
+            filename: `${filename}.json`,
+            contentType: 'application/json'
+        });
 
         // Configurar headers con Bearer token
         const config = {
@@ -118,22 +125,23 @@ app.post('/save-json', async (req, res) => {
         // Ruta completa del archivo
         const filePath = path.join(controlMPath, fileName);
 
-        // Escribir el archivo JSON
-        fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2), 'utf8');
+        // Ejecutar la API de Control-M directamente con el JSON (sin guardar archivo)
+        const apiResult = await executeControlMApi(ambiente, token, parsedJson, filename);
 
-        console.log(`Archivo guardado: ${filePath} (Ambiente: ${ambiente}, Token: ${token})`);
+        // Opcionalmente guardar el archivo para debugging (comentado por defecto)
+        // fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2), 'utf8');
+        // console.log(`Archivo guardado: ${filePath} (Ambiente: ${ambiente}, Token: ${token})`);
 
-        // Ejecutar la API de Control-M después de guardar el archivo
-        const apiResult = await executeControlMApi(ambiente, token, filePath);
+        console.log(`API ejecutada directamente para ambiente ${ambiente} con archivo: ${fileName}`);
 
         res.json({
             success: true,
-            message: 'Archivo JSON guardado exitosamente y API ejecutada',
-            filePath: filePath,
+            message: 'JSON enviado directamente a Control-M API',
             filename: fileName,
             ambiente: ambiente,
             token: token,
-            controlMApi: apiResult
+            controlMApi: apiResult,
+            jsonSize: JSON.stringify(parsedJson).length
         });
 
     } catch (error) {
