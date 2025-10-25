@@ -30,9 +30,24 @@ function getCurrentUser() {
     }
 }
 
-// Función para obtener la ruta del escritorio
+// Función para obtener la ruta del escritorio del usuario de sesión actual
 function getDesktopPath() {
-    return path.join(os.homedir(), 'Desktop');
+    try {
+        const currentUser = getCurrentUser();
+        
+        // En Windows, construir la ruta del escritorio del usuario de sesión
+        if (process.platform === 'win32') {
+            // Para Windows, usar la ruta C:\Users\[usuario]\Desktop
+            return path.join('C:', 'Users', currentUser, 'Desktop');
+        } else {
+            // En sistemas Unix-like, usar /home/[usuario]/Desktop
+            return path.join('/home', currentUser, 'Desktop');
+        }
+    } catch (error) {
+        console.warn('No se pudo obtener la ruta del escritorio del usuario de sesión:', error.message);
+        // Fallback al directorio home del proceso actual
+        return path.join(os.homedir(), 'Desktop');
+    }
 }
 
 // Función para crear directorio si no existe
@@ -136,9 +151,11 @@ app.post('/save-json', async (req, res) => {
         const currentUser = getCurrentUser();
         console.log(`Usuario de la sesión actual: ${currentUser}`);
 
-        // Obtener ruta del escritorio y crear carpeta controlm
+        // Obtener ruta del escritorio del usuario de sesión y crear carpeta controlm
         const desktopPath = getDesktopPath();
         const controlMPath = path.join(desktopPath, 'controlm');
+        
+        console.log(`Escritorio del usuario de sesión: ${desktopPath}`);
         
         // Crear directorio si no existe
         ensureDirectoryExists(controlMPath);
@@ -168,16 +185,18 @@ app.post('/save-json', async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Archivo JSON guardado exitosamente en la carpeta controlm del escritorio',
+            message: 'Archivo JSON guardado exitosamente en la carpeta controlm del escritorio del usuario de sesión',
             filename: fileName,
             ambiente: ambiente,
             token: token,
             jsonSize: JSON.stringify(parsedJson).length,
             filePath: filePath,
             currentUser: currentUser,
+            desktopPath: desktopPath,
+            controlMPath: controlMPath,
             controlMInfo: controlMInfo,
             clientInstructions: {
-                message: 'Archivo guardado en controlm del escritorio. Usa la información en controlMInfo para ejecutar la API de Control-M desde tu máquina local',
+                message: 'Archivo guardado en controlm del escritorio del usuario de sesión. Usa la información en controlMInfo para ejecutar la API de Control-M desde tu máquina local',
                 example: 'Ver documentación para ejemplos de implementación'
             }
         });
@@ -219,6 +238,6 @@ app.listen(PORT, () => {
     
     console.log(`Servidor corriendo en http://localhost:${PORT}`);
     console.log(`Usuario de la sesión: ${currentUser}`);
-    console.log(`Escritorio detectado: ${desktopPath}`);
+    console.log(`Escritorio del usuario de sesión: ${desktopPath}`);
     console.log(`Carpeta controlm: ${controlMPath}`);
 });
