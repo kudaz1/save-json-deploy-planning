@@ -19,17 +19,46 @@ function getCurrentUser() {
     try {
         let user = null;
         
-        // En Windows, probar diferentes métodos
+        // En Windows, probar diferentes métodos para obtener usuario de sesión activa
         if (process.platform === 'win32') {
             try {
-                // Método 1: whoami
+                // Método 1: whoami (más confiable para sesión activa)
                 user = execSync('whoami', { encoding: 'utf8' }).trim();
                 console.log(`Usuario detectado con whoami: ${user}`);
+                
+                // Limpiar el formato de dominio si existe (ej: DOMAIN\user -> user)
+                if (user.includes('\\')) {
+                    user = user.split('\\').pop();
+                    console.log(`Usuario limpio (sin dominio): ${user}`);
+                }
             } catch (error) {
                 console.log('whoami falló, probando otros métodos...');
             }
             
-            // Método 2: echo %USERNAME%
+            // Método 2: query session (para obtener sesión activa)
+            if (!user) {
+                try {
+                    const sessionInfo = execSync('query session', { encoding: 'utf8' });
+                    console.log('Información de sesiones:', sessionInfo);
+                    
+                    // Buscar la sesión activa (estado "Active")
+                    const lines = sessionInfo.split('\n');
+                    for (const line of lines) {
+                        if (line.includes('Active') && line.includes('console')) {
+                            const parts = line.trim().split(/\s+/);
+                            if (parts.length >= 2) {
+                                user = parts[1];
+                                console.log(`Usuario de sesión activa detectado: ${user}`);
+                                break;
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.log('query session falló...');
+                }
+            }
+            
+            // Método 3: echo %USERNAME% (variable de entorno)
             if (!user) {
                 try {
                     user = execSync('echo %USERNAME%', { encoding: 'utf8', shell: true }).trim();
@@ -39,10 +68,24 @@ function getCurrentUser() {
                 }
             }
             
-            // Método 3: Usar variables de entorno
+            // Método 4: Usar variables de entorno directamente
             if (!user) {
                 user = process.env.USERNAME || process.env.USER;
                 console.log(`Usuario detectado con variables de entorno: ${user}`);
+            }
+            
+            // Método 5: Usar wmic para obtener usuario de sesión
+            if (!user) {
+                try {
+                    const wmicResult = execSync('wmic computersystem get username /value', { encoding: 'utf8' });
+                    const match = wmicResult.match(/Username=(.+)/);
+                    if (match) {
+                        user = match[1].trim();
+                        console.log(`Usuario detectado con wmic: ${user}`);
+                    }
+                } catch (error) {
+                    console.log('wmic falló...');
+                }
             }
         } else {
             // En sistemas Unix-like
@@ -341,7 +384,15 @@ app.get('/diagnostic', (req, res) => {
             documentsPath: documentsPath,
             documentsExists: fs.existsSync(documentsPath),
             controlMPath: controlMPath,
-            controlMExists: fs.existsSync(controlMPath)
+            controlMExists: fs.existsSync(controlMPath),
+            // Información adicional de Windows
+            windowsInfo: process.platform === 'win32' ? {
+                computerName: process.env.COMPUTERNAME,
+                logonServer: process.env.LOGONSERVER,
+                sessionName: process.env.SESSIONNAME,
+                userDomain: process.env.USERDOMAIN,
+                userDomainRoamingProfile: process.env.USERDOMAIN_ROAMINGPROFILE
+            } : null
         };
         
         res.json({
