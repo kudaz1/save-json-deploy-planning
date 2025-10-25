@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const axios = require('axios');
 const FormData = require('form-data');
+const { execSync } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,6 +13,22 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+// Función para obtener el usuario de la sesión actual
+function getCurrentUser() {
+    try {
+        // En Windows, usar whoami
+        if (process.platform === 'win32') {
+            return execSync('whoami', { encoding: 'utf8' }).trim();
+        } else {
+            // En sistemas Unix-like, usar who am i
+            return execSync('who am i', { encoding: 'utf8' }).split(' ')[0];
+        }
+    } catch (error) {
+        console.warn('No se pudo obtener el usuario de la sesión:', error.message);
+        return os.userInfo().username;
+    }
+}
 
 // Función para obtener la ruta del escritorio
 function getDesktopPath() {
@@ -115,15 +132,24 @@ app.post('/save-json', async (req, res) => {
         // Asegurar que el nombre del archivo tenga extensión .json
         const fileName = filename.endsWith('.json') ? filename : `${filename}.json`;
 
-        // Obtener ruta del escritorio y crear carpeta controlM
+        // Obtener usuario de la sesión actual
+        const currentUser = getCurrentUser();
+        console.log(`Usuario de la sesión actual: ${currentUser}`);
+
+        // Obtener ruta del escritorio y crear carpeta controlm
         const desktopPath = getDesktopPath();
-        const controlMPath = path.join(desktopPath, 'controlM');
+        const controlMPath = path.join(desktopPath, 'controlm');
         
         // Crear directorio si no existe
         ensureDirectoryExists(controlMPath);
+        console.log(`Carpeta controlm creada/verificada en: ${controlMPath}`);
 
         // Ruta completa del archivo
         const filePath = path.join(controlMPath, fileName);
+
+        // Guardar el archivo JSON en la carpeta controlm
+        fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2));
+        console.log(`Archivo JSON guardado en: ${filePath}`);
 
         // Preparar información para que el cliente ejecute Control-M directamente
         const controlMInfo = {
@@ -142,14 +168,16 @@ app.post('/save-json', async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Información de Control-M lista para ejecutar desde el cliente',
+            message: 'Archivo JSON guardado exitosamente en la carpeta controlm del escritorio',
             filename: fileName,
             ambiente: ambiente,
             token: token,
             jsonSize: JSON.stringify(parsedJson).length,
+            filePath: filePath,
+            currentUser: currentUser,
             controlMInfo: controlMInfo,
             clientInstructions: {
-                message: 'Usa la información en controlMInfo para ejecutar la API de Control-M desde tu máquina local',
+                message: 'Archivo guardado en controlm del escritorio. Usa la información en controlMInfo para ejecutar la API de Control-M desde tu máquina local',
                 example: 'Ver documentación para ejemplos de implementación'
             }
         });
@@ -185,6 +213,12 @@ app.get('/', (req, res) => {
 
 // Iniciar servidor
 app.listen(PORT, () => {
+    const currentUser = getCurrentUser();
+    const desktopPath = getDesktopPath();
+    const controlMPath = path.join(desktopPath, 'controlm');
+    
     console.log(`Servidor corriendo en http://localhost:${PORT}`);
-    console.log(`Escritorio detectado: ${getDesktopPath()}`);
+    console.log(`Usuario de la sesión: ${currentUser}`);
+    console.log(`Escritorio detectado: ${desktopPath}`);
+    console.log(`Carpeta controlm: ${controlMPath}`);
 });
