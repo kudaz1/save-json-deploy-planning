@@ -17,16 +17,59 @@ app.use(express.json({ limit: '10mb' }));
 // Función para obtener el usuario de la sesión actual
 function getCurrentUser() {
     try {
-        // En Windows, usar whoami
+        let user = null;
+        
+        // En Windows, probar diferentes métodos
         if (process.platform === 'win32') {
-            return execSync('whoami', { encoding: 'utf8' }).trim();
+            try {
+                // Método 1: whoami
+                user = execSync('whoami', { encoding: 'utf8' }).trim();
+                console.log(`Usuario detectado con whoami: ${user}`);
+            } catch (error) {
+                console.log('whoami falló, probando otros métodos...');
+            }
+            
+            // Método 2: echo %USERNAME%
+            if (!user) {
+                try {
+                    user = execSync('echo %USERNAME%', { encoding: 'utf8', shell: true }).trim();
+                    console.log(`Usuario detectado con echo %USERNAME%: ${user}`);
+                } catch (error) {
+                    console.log('echo %USERNAME% falló...');
+                }
+            }
+            
+            // Método 3: Usar variables de entorno
+            if (!user) {
+                user = process.env.USERNAME || process.env.USER;
+                console.log(`Usuario detectado con variables de entorno: ${user}`);
+            }
         } else {
-            // En sistemas Unix-like, usar who am i
-            return execSync('who am i', { encoding: 'utf8' }).split(' ')[0];
+            // En sistemas Unix-like
+            try {
+                user = execSync('who am i', { encoding: 'utf8' }).split(' ')[0];
+                console.log(`Usuario detectado con 'who am i': ${user}`);
+            } catch (error) {
+                console.log('who am i falló, probando otros métodos...');
+                user = execSync('whoami', { encoding: 'utf8' }).trim();
+                console.log(`Usuario detectado con whoami: ${user}`);
+            }
         }
+        
+        // Fallback final
+        if (!user) {
+            user = os.userInfo().username;
+            console.log(`Usuario de fallback (os.userInfo): ${user}`);
+        }
+        
+        console.log(`Usuario final seleccionado: ${user}`);
+        return user;
+        
     } catch (error) {
-        console.warn('No se pudo obtener el usuario de la sesión:', error.message);
-        return os.userInfo().username;
+        console.warn('Error obteniendo usuario de la sesión:', error.message);
+        const fallbackUser = os.userInfo().username;
+        console.log(`Usuario de fallback por error: ${fallbackUser}`);
+        return fallbackUser;
     }
 }
 
@@ -34,19 +77,83 @@ function getCurrentUser() {
 function getDocumentsPath() {
     try {
         const currentUser = getCurrentUser();
+        console.log(`Intentando obtener Documentos para usuario: ${currentUser}`);
         
-        // En Windows, construir la ruta de Documentos del usuario de sesión
+        let documentsPath = null;
+        
+        // En Windows, probar diferentes rutas
         if (process.platform === 'win32') {
-            // Para Windows, usar la ruta C:\Users\[usuario]\Documents
-            return path.join('C:', 'Users', currentUser, 'Documents');
+            // Método 1: Ruta estándar C:\Users\[usuario]\Documents
+            const standardPath = path.join('C:', 'Users', currentUser, 'Documents');
+            console.log(`Probando ruta estándar: ${standardPath}`);
+            
+            if (fs.existsSync(standardPath)) {
+                documentsPath = standardPath;
+                console.log(`Ruta estándar encontrada: ${documentsPath}`);
+            } else {
+                console.log('Ruta estándar no existe, probando otras opciones...');
+                
+                // Método 2: Usar variable de entorno USERPROFILE
+                const userProfile = process.env.USERPROFILE;
+                if (userProfile) {
+                    const envPath = path.join(userProfile, 'Documents');
+                    console.log(`Probando ruta con USERPROFILE: ${envPath}`);
+                    if (fs.existsSync(envPath)) {
+                        documentsPath = envPath;
+                        console.log(`Ruta con USERPROFILE encontrada: ${documentsPath}`);
+                    }
+                }
+                
+                // Método 3: Usar HOMEDRIVE y HOMEPATH
+                if (!documentsPath) {
+                    const homeDrive = process.env.HOMEDRIVE;
+                    const homePath = process.env.HOMEPATH;
+                    if (homeDrive && homePath) {
+                        const envPath = path.join(homeDrive, homePath, 'Documents');
+                        console.log(`Probando ruta con HOMEDRIVE/HOMEPATH: ${envPath}`);
+                        if (fs.existsSync(envPath)) {
+                            documentsPath = envPath;
+                            console.log(`Ruta con HOMEDRIVE/HOMEPATH encontrada: ${documentsPath}`);
+                        }
+                    }
+                }
+            }
         } else {
-            // En sistemas Unix-like, usar /home/[usuario]/Documents
-            return path.join('/home', currentUser, 'Documents');
+            // En sistemas Unix-like
+            const unixPath = path.join('/home', currentUser, 'Documents');
+            console.log(`Probando ruta Unix: ${unixPath}`);
+            
+            if (fs.existsSync(unixPath)) {
+                documentsPath = unixPath;
+                console.log(`Ruta Unix encontrada: ${documentsPath}`);
+            } else {
+                // Probar con HOME
+                const homeDir = process.env.HOME;
+                if (homeDir) {
+                    const homePath = path.join(homeDir, 'Documents');
+                    console.log(`Probando ruta con HOME: ${homePath}`);
+                    if (fs.existsSync(homePath)) {
+                        documentsPath = homePath;
+                        console.log(`Ruta con HOME encontrada: ${documentsPath}`);
+                    }
+                }
+            }
         }
+        
+        // Fallback final
+        if (!documentsPath) {
+            documentsPath = path.join(os.homedir(), 'Documents');
+            console.log(`Usando fallback: ${documentsPath}`);
+        }
+        
+        console.log(`Ruta final de Documentos: ${documentsPath}`);
+        return documentsPath;
+        
     } catch (error) {
-        console.warn('No se pudo obtener la ruta de Documentos del usuario de sesión:', error.message);
-        // Fallback al directorio home del proceso actual
-        return path.join(os.homedir(), 'Documents');
+        console.warn('Error obteniendo ruta de Documentos:', error.message);
+        const fallbackPath = path.join(os.homedir(), 'Documents');
+        console.log(`Ruta de fallback por error: ${fallbackPath}`);
+        return fallbackPath;
     }
 }
 
@@ -210,11 +317,61 @@ app.post('/save-json', async (req, res) => {
     }
 });
 
+// Endpoint de diagnóstico
+app.get('/diagnostic', (req, res) => {
+    try {
+        const currentUser = getCurrentUser();
+        const documentsPath = getDocumentsPath();
+        const controlMPath = path.join(documentsPath, 'controlm');
+        
+        // Información del sistema
+        const systemInfo = {
+            platform: process.platform,
+            nodeVersion: process.version,
+            environment: {
+                USERNAME: process.env.USERNAME,
+                USER: process.env.USER,
+                USERPROFILE: process.env.USERPROFILE,
+                HOMEDRIVE: process.env.HOMEDRIVE,
+                HOMEPATH: process.env.HOMEPATH,
+                HOME: process.env.HOME
+            },
+            osUserInfo: os.userInfo(),
+            currentUser: currentUser,
+            documentsPath: documentsPath,
+            documentsExists: fs.existsSync(documentsPath),
+            controlMPath: controlMPath,
+            controlMExists: fs.existsSync(controlMPath)
+        };
+        
+        res.json({
+            success: true,
+            message: 'Información de diagnóstico del sistema',
+            systemInfo: systemInfo,
+            recommendations: {
+                message: 'Revisa la información del sistema para verificar las rutas detectadas',
+                nextSteps: [
+                    'Verifica que documentsPath sea correcto',
+                    'Verifica que documentsExists sea true',
+                    'Si las rutas no son correctas, revisa las variables de entorno'
+                ]
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: 'Error en diagnóstico',
+            message: error.message
+        });
+    }
+});
+
 // Endpoint de prueba
 app.get('/', (req, res) => {
     res.json({
         message: 'API para guardar archivos JSON',
         endpoints: {
+            'GET /diagnostic': 'Información de diagnóstico del sistema',
             'POST /save-json': 'Guarda un archivo JSON en Documentos/controlm'
         },
         example: {
