@@ -325,9 +325,10 @@ app.post('/save-json', async (req, res) => {
         // Ruta completa del archivo
         const filePath = path.join(controlMPath, fileName);
 
-        // Guardar el archivo JSON en la carpeta controlm
-        fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2));
-        console.log(`Archivo JSON guardado en: ${filePath}`);
+        // NO guardar el archivo en el servidor, solo preparar la información
+        // El archivo se guardará en el cliente (tu computadora)
+        console.log(`Archivo JSON preparado para guardar en: ${filePath}`);
+        console.log(`Contenido del archivo:`, JSON.stringify(parsedJson, null, 2));
 
         // Preparar información para que el cliente ejecute Control-M directamente
         const controlMInfo = {
@@ -346,7 +347,7 @@ app.post('/save-json', async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Archivo JSON guardado exitosamente en la carpeta controlm de Documentos del usuario de sesión',
+            message: 'Archivo JSON preparado para guardar en tu computadora local',
             filename: fileName,
             ambiente: ambiente,
             token: token,
@@ -355,9 +356,16 @@ app.post('/save-json', async (req, res) => {
             currentUser: currentUser,
             documentsPath: documentsPath,
             controlMPath: controlMPath,
+            jsonContent: parsedJson,
             controlMInfo: controlMInfo,
             clientInstructions: {
-                message: 'Archivo guardado en controlm de Documentos del usuario de sesión. Usa la información en controlMInfo para ejecutar la API de Control-M desde tu máquina local',
+                message: 'Archivo JSON preparado. Debes guardarlo manualmente en tu computadora local en la carpeta controlm de Documentos',
+                steps: [
+                    '1. Copia el contenido de jsonContent',
+                    '2. Crea la carpeta controlm en tu carpeta Documentos si no existe',
+                    '3. Guarda el archivo con el nombre especificado en filename',
+                    '4. Usa la información en controlMInfo para ejecutar Control-M'
+                ],
                 example: 'Ver documentación para ejemplos de implementación'
             }
         });
