@@ -30,23 +30,23 @@ function getCurrentUser() {
     }
 }
 
-// Función para obtener la ruta del escritorio del usuario de sesión actual
-function getDesktopPath() {
+// Función para obtener la ruta de Documentos del usuario de sesión actual
+function getDocumentsPath() {
     try {
         const currentUser = getCurrentUser();
         
-        // En Windows, construir la ruta del escritorio del usuario de sesión
+        // En Windows, construir la ruta de Documentos del usuario de sesión
         if (process.platform === 'win32') {
-            // Para Windows, usar la ruta C:\Users\[usuario]\Desktop
-            return path.join('C:', 'Users', currentUser, 'Desktop');
+            // Para Windows, usar la ruta C:\Users\[usuario]\Documents
+            return path.join('C:', 'Users', currentUser, 'Documents');
         } else {
-            // En sistemas Unix-like, usar /home/[usuario]/Desktop
-            return path.join('/home', currentUser, 'Desktop');
+            // En sistemas Unix-like, usar /home/[usuario]/Documents
+            return path.join('/home', currentUser, 'Documents');
         }
     } catch (error) {
-        console.warn('No se pudo obtener la ruta del escritorio del usuario de sesión:', error.message);
+        console.warn('No se pudo obtener la ruta de Documentos del usuario de sesión:', error.message);
         // Fallback al directorio home del proceso actual
-        return path.join(os.homedir(), 'Desktop');
+        return path.join(os.homedir(), 'Documents');
     }
 }
 
@@ -151,11 +151,11 @@ app.post('/save-json', async (req, res) => {
         const currentUser = getCurrentUser();
         console.log(`Usuario de la sesión actual: ${currentUser}`);
 
-        // Obtener ruta del escritorio del usuario de sesión y crear carpeta controlm
-        const desktopPath = getDesktopPath();
-        const controlMPath = path.join(desktopPath, 'controlm');
+        // Obtener ruta de Documentos del usuario de sesión y crear carpeta controlm
+        const documentsPath = getDocumentsPath();
+        const controlMPath = path.join(documentsPath, 'controlm');
         
-        console.log(`Escritorio del usuario de sesión: ${desktopPath}`);
+        console.log(`Documentos del usuario de sesión: ${documentsPath}`);
         
         // Crear directorio si no existe
         ensureDirectoryExists(controlMPath);
@@ -185,18 +185,18 @@ app.post('/save-json', async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Archivo JSON guardado exitosamente en la carpeta controlm del escritorio del usuario de sesión',
+            message: 'Archivo JSON guardado exitosamente en la carpeta controlm de Documentos del usuario de sesión',
             filename: fileName,
             ambiente: ambiente,
             token: token,
             jsonSize: JSON.stringify(parsedJson).length,
             filePath: filePath,
             currentUser: currentUser,
-            desktopPath: desktopPath,
+            documentsPath: documentsPath,
             controlMPath: controlMPath,
             controlMInfo: controlMInfo,
             clientInstructions: {
-                message: 'Archivo guardado en controlm del escritorio del usuario de sesión. Usa la información en controlMInfo para ejecutar la API de Control-M desde tu máquina local',
+                message: 'Archivo guardado en controlm de Documentos del usuario de sesión. Usa la información en controlMInfo para ejecutar la API de Control-M desde tu máquina local',
                 example: 'Ver documentación para ejemplos de implementación'
             }
         });
@@ -215,7 +215,7 @@ app.get('/', (req, res) => {
     res.json({
         message: 'API para guardar archivos JSON',
         endpoints: {
-            'POST /save-json': 'Guarda un archivo JSON en el escritorio/controlM'
+            'POST /save-json': 'Guarda un archivo JSON en Documentos/controlm'
         },
         example: {
             method: 'POST',
@@ -233,11 +233,11 @@ app.get('/', (req, res) => {
 // Iniciar servidor
 app.listen(PORT, () => {
     const currentUser = getCurrentUser();
-    const desktopPath = getDesktopPath();
-    const controlMPath = path.join(desktopPath, 'controlm');
+    const documentsPath = getDocumentsPath();
+    const controlMPath = path.join(documentsPath, 'controlm');
     
     console.log(`Servidor corriendo en http://localhost:${PORT}`);
     console.log(`Usuario de la sesión: ${currentUser}`);
-    console.log(`Escritorio del usuario de sesión: ${desktopPath}`);
+    console.log(`Documentos del usuario de sesión: ${documentsPath}`);
     console.log(`Carpeta controlm: ${controlMPath}`);
 });
