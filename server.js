@@ -126,37 +126,48 @@ function getDocumentsPath() {
         
         // En Windows, probar diferentes rutas
         if (process.platform === 'win32') {
-            // Método 1: Ruta estándar C:\Users\[usuario]\Documents
-            const standardPath = path.join('C:', 'Users', currentUser, 'Documents');
-            console.log(`Probando ruta estándar: ${standardPath}`);
+            // Método 1: Ruta OneDrive Documentos (preferida)
+            const oneDrivePath = path.join('C:', 'Users', currentUser, 'OneDrive', 'Documentos');
+            console.log(`Probando ruta OneDrive Documentos: ${oneDrivePath}`);
             
-            if (fs.existsSync(standardPath)) {
-                documentsPath = standardPath;
-                console.log(`Ruta estándar encontrada: ${documentsPath}`);
+            if (fs.existsSync(oneDrivePath)) {
+                documentsPath = oneDrivePath;
+                console.log(`Ruta OneDrive Documentos encontrada: ${documentsPath}`);
             } else {
-                console.log('Ruta estándar no existe, probando otras opciones...');
+                console.log('Ruta OneDrive Documentos no existe, probando otras opciones...');
                 
-                // Método 2: Usar variable de entorno USERPROFILE
-                const userProfile = process.env.USERPROFILE;
-                if (userProfile) {
-                    const envPath = path.join(userProfile, 'Documents');
-                    console.log(`Probando ruta con USERPROFILE: ${envPath}`);
-                    if (fs.existsSync(envPath)) {
-                        documentsPath = envPath;
-                        console.log(`Ruta con USERPROFILE encontrada: ${documentsPath}`);
-                    }
-                }
+                // Método 2: Ruta estándar C:\Users\[usuario]\Documents
+                const standardPath = path.join('C:', 'Users', currentUser, 'Documents');
+                console.log(`Probando ruta estándar: ${standardPath}`);
                 
-                // Método 3: Usar HOMEDRIVE y HOMEPATH
-                if (!documentsPath) {
-                    const homeDrive = process.env.HOMEDRIVE;
-                    const homePath = process.env.HOMEPATH;
-                    if (homeDrive && homePath) {
-                        const envPath = path.join(homeDrive, homePath, 'Documents');
-                        console.log(`Probando ruta con HOMEDRIVE/HOMEPATH: ${envPath}`);
+                if (fs.existsSync(standardPath)) {
+                    documentsPath = standardPath;
+                    console.log(`Ruta estándar encontrada: ${documentsPath}`);
+                } else {
+                    console.log('Ruta estándar no existe, probando otras opciones...');
+                    
+                    // Método 3: Usar variable de entorno USERPROFILE
+                    const userProfile = process.env.USERPROFILE;
+                    if (userProfile) {
+                        const envPath = path.join(userProfile, 'Documents');
+                        console.log(`Probando ruta con USERPROFILE: ${envPath}`);
                         if (fs.existsSync(envPath)) {
                             documentsPath = envPath;
-                            console.log(`Ruta con HOMEDRIVE/HOMEPATH encontrada: ${documentsPath}`);
+                            console.log(`Ruta con USERPROFILE encontrada: ${documentsPath}`);
+                        }
+                    }
+                    
+                    // Método 4: Usar HOMEDRIVE y HOMEPATH
+                    if (!documentsPath) {
+                        const homeDrive = process.env.HOMEDRIVE;
+                        const homePath = process.env.HOMEPATH;
+                        if (homeDrive && homePath) {
+                            const envPath = path.join(homeDrive, homePath, 'Documents');
+                            console.log(`Probando ruta con HOMEDRIVE/HOMEPATH: ${envPath}`);
+                            if (fs.existsSync(envPath)) {
+                                documentsPath = envPath;
+                                console.log(`Ruta con HOMEDRIVE/HOMEPATH encontrada: ${documentsPath}`);
+                            }
                         }
                     }
                 }
