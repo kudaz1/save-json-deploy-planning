@@ -4,18 +4,39 @@ const path = require('path');
 const os = require('os');
 
 /**
- * Cliente para guardar archivos JSON en la computadora local
- * @param {string} apiUrl - URL de tu API en Railway
- * @param {Object} requestData - Datos para enviar a la API
+ * Cliente para guardar archivos JSON desde la API de Railway en la computadora local
+ * @param {Object} options - Opciones de configuración
+ * @param {string} options.apiUrl - URL de la API en Railway
+ * @param {string} options.ambiente - Ambiente (DEV o QA)
+ * @param {string} options.token - Token de autenticación
+ * @param {string} options.filename - Nombre del archivo
+ * @param {Object} options.jsonData - Datos JSON a guardar
+ * @param {string} [options.documentsPath] - Ruta personalizada de Documentos (opcional)
  * @returns {Promise<Object>} Resultado del proceso
  */
-async function saveJsonLocally(apiUrl, requestData) {
+async function saveJsonFromAPI(options) {
+    const {
+        apiUrl,
+        ambiente,
+        token,
+        filename,
+        jsonData,
+        documentsPath
+    } = options;
+
     try {
-        console.log('=== GUARDANDO JSON EN COMPUTADORA LOCAL ===');
-        console.log('Llamando a la API...');
+        console.log('=== GUARDANDO JSON DESDE API DE RAILWAY ===');
+        console.log(`API URL: ${apiUrl}`);
+        console.log(`Archivo: ${filename}`);
         
         // Llamar a la API
-        const response = await axios.post(apiUrl, requestData, {
+        console.log('📡 Llamando a la API...');
+        const response = await axios.post(apiUrl, {
+            ambiente,
+            token,
+            filename,
+            jsonData
+        }, {
             headers: {
                 'Content-Type': 'application/json'
             },
@@ -27,17 +48,37 @@ async function saveJsonLocally(apiUrl, requestData) {
         }
 
         console.log('✅ API respondió exitosamente');
-        console.log('📄 Respuesta:', response.data.message);
+        console.log('📄 Mensaje:', response.data.message);
 
         // Obtener información del archivo
-        const { filename, jsonContent, controlMInfo } = response.data;
+        const { jsonContent, controlMInfo } = response.data;
         
-        // Obtener ruta de Documentos local (OneDrive)
-        const documentsPath = path.join(os.homedir(), 'OneDrive', 'Documentos');
-        const controlMPath = path.join(documentsPath, 'controlm');
+        if (!jsonContent) {
+            throw new Error('La API no devolvió jsonContent');
+        }
+        
+        // Determinar ruta de Documentos
+        let finalDocumentsPath;
+        if (documentsPath) {
+            finalDocumentsPath = documentsPath;
+        } else {
+            // Intentar OneDrive primero, luego Documents del sistema
+            const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Documentos');
+            const systemPath = path.join(os.homedir(), 'Documents');
+            
+            if (fs.existsSync(oneDrivePath)) {
+                finalDocumentsPath = oneDrivePath;
+                console.log('📁 Usando OneDrive Documentos');
+            } else {
+                finalDocumentsPath = systemPath;
+                console.log('📁 Usando Documents del sistema');
+            }
+        }
+        
+        const controlMPath = path.join(finalDocumentsPath, 'controlm');
         
         console.log(`\n=== GUARDANDO EN COMPUTADORA LOCAL ===`);
-        console.log(`Ruta de Documentos: ${documentsPath}`);
+        console.log(`Ruta de Documentos: ${finalDocumentsPath}`);
         console.log(`Ruta de controlm: ${controlMPath}`);
         
         // Crear carpeta controlm si no existe
@@ -70,7 +111,8 @@ async function saveJsonLocally(apiUrl, requestData) {
             filePath: filePath,
             filename: filename,
             controlMInfo: controlMInfo,
-            apiResponse: response.data
+            documentsPath: finalDocumentsPath,
+            controlMPath: controlMPath
         };
 
     } catch (error) {
@@ -84,11 +126,11 @@ async function saveJsonLocally(apiUrl, requestData) {
 
 // Función de ejemplo
 async function example() {
-    const apiUrl = 'https://save-json-deploy-planning-production.up.railway.app/save-json';
-    const requestData = {
+    const result = await saveJsonFromAPI({
+        apiUrl: 'https://save-json-deploy-planning-production.up.railway.app/save-json',
         ambiente: 'DEV',
         token: 'tu-bearer-token-aqui',
-        filename: 'GENER_NEXUS-DEMOGRAFICO-CARLOS',
+        filename: 'GENER_NEXUS-DEMOGRAFICO-CARLOS.json',
         jsonData: {
             "GENER_NEXUS-DEMOGRAFICO-CARLOS": {
                 "Type": "SimpleFolder",
@@ -118,15 +160,14 @@ async function example() {
                 }
             }
         }
-    };
-
-    const result = await saveJsonLocally(apiUrl, requestData);
+    });
+    
     console.log('\n=== RESULTADO FINAL ===');
     console.log(JSON.stringify(result, null, 2));
 }
 
 // Exportar función
-module.exports = { saveJsonLocally };
+module.exports = { saveJsonFromAPI };
 
 // Ejecutar ejemplo si se llama directamente
 if (require.main === module) {

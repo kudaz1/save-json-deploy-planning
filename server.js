@@ -219,6 +219,89 @@ function ensureDirectoryExists(dirPath) {
     }
 }
 
+// Función para generar script automático de guardado
+function generateAutoSaveScript(jsonData, filename, ambiente, token) {
+    const script = `
+// Script automático generado por la API
+// Este script guardará el archivo JSON en tu computadora local
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+
+async function guardarArchivoAutomaticamente() {
+    try {
+        console.log('=== GUARDANDO ARCHIVO AUTOMÁTICAMENTE ===');
+        
+        // Datos del archivo JSON
+        const jsonData = ${JSON.stringify(jsonData, null, 8)};
+        const filename = '${filename}';
+        const ambiente = '${ambiente}';
+        const token = '${token}';
+        
+        // Detectar ruta de Documentos en esta computadora
+        const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Documentos');
+        const systemPath = path.join(os.homedir(), 'Documents');
+        
+        let documentsPath;
+        if (fs.existsSync(oneDrivePath)) {
+            documentsPath = oneDrivePath;
+            console.log('📁 Usando OneDrive Documentos');
+        } else {
+            documentsPath = systemPath;
+            console.log('📁 Usando Documents del sistema');
+        }
+        
+        const controlMPath = path.join(documentsPath, 'controlm');
+        
+        console.log(\`Ruta de Documentos: \${documentsPath}\`);
+        console.log(\`Ruta de controlm: \${controlMPath}\`);
+        
+        // Crear carpeta controlm si no existe
+        if (!fs.existsSync(controlMPath)) {
+            fs.mkdirSync(controlMPath, { recursive: true });
+            console.log(\`✅ Carpeta controlm creada: \${controlMPath}\`);
+        } else {
+            console.log(\`ℹ️ Carpeta controlm ya existe: \${controlMPath}\`);
+        }
+        
+        // Ruta completa del archivo
+        const filePath = path.join(controlMPath, filename);
+        
+        // Guardar el archivo JSON
+        fs.writeFileSync(filePath, JSON.stringify(jsonData, null, 2));
+        console.log(\`✅ Archivo JSON guardado: \${filePath}\`);
+        
+        // Verificar que se guardó
+        if (fs.existsSync(filePath)) {
+            const stats = fs.statSync(filePath);
+            console.log(\`📁 Tamaño: \${stats.size} bytes\`);
+            console.log(\`📅 Creado: \${stats.birthtime}\`);
+        }
+        
+        console.log('\\n🎉 ¡ARCHIVO GUARDADO EXITOSAMENTE!');
+        console.log(\`📂 Ubicación: \${filePath}\`);
+        console.log('\\n📋 Información del archivo:');
+        console.log(\`- Nombre: \${filename}\`);
+        console.log(\`- Ambiente: \${ambiente}\`);
+        console.log(\`- Token: \${token}\`);
+        
+    } catch (error) {
+        console.error('❌ Error:', error.message);
+        console.log('\\n🔧 Posibles soluciones:');
+        console.log('1. Verifica que tengas permisos de escritura en Documentos');
+        console.log('2. Ejecuta como administrador si es necesario');
+        console.log('3. Verifica que Node.js esté instalado');
+    }
+}
+
+// Ejecutar automáticamente
+guardarArchivoAutomaticamente();
+`;
+    
+    return script;
+}
+
 // Función para ejecutar la API según el ambiente
 async function executeControlMApi(ambiente, token, jsonData, filename) {
     try {
@@ -345,9 +428,12 @@ app.post('/save-json', async (req, res) => {
 
         console.log(`Información de Control-M preparada para ambiente ${ambiente} con archivo: ${fileName}`);
 
+        // Generar script automático para el cliente
+        const autoSaveScript = generateAutoSaveScript(parsedJson, fileName, ambiente, token);
+
         res.json({
             success: true,
-            message: 'Archivo JSON preparado para guardar en tu computadora local',
+            message: 'Archivo JSON preparado para guardar automáticamente en tu computadora',
             filename: fileName,
             ambiente: ambiente,
             token: token,
@@ -358,13 +444,14 @@ app.post('/save-json', async (req, res) => {
             controlMPath: controlMPath,
             jsonContent: parsedJson,
             controlMInfo: controlMInfo,
+            autoSaveScript: autoSaveScript,
             clientInstructions: {
-                message: 'Archivo JSON preparado. Debes guardarlo manualmente en tu computadora local en la carpeta controlm de Documentos',
+                message: 'Ejecuta el script automático para guardar el archivo en tu computadora',
                 steps: [
-                    '1. Copia el contenido de jsonContent',
-                    '2. Crea la carpeta controlm en tu carpeta Documentos si no existe',
-                    '3. Guarda el archivo con el nombre especificado en filename',
-                    '4. Usa la información en controlMInfo para ejecutar Control-M'
+                    '1. Copia el código de autoSaveScript',
+                    '2. Pégalo en un archivo .js en tu computadora',
+                    '3. Ejecuta: node archivo.js',
+                    '4. El archivo se guardará automáticamente en Documentos/controlm'
                 ],
                 example: 'Ver documentación para ejemplos de implementación'
             }
@@ -375,6 +462,45 @@ app.post('/save-json', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Error interno del servidor al guardar el archivo'
+        });
+    }
+});
+
+// Endpoint para generar script automático
+app.post('/generate-script', (req, res) => {
+    try {
+        const { ambiente, token, filename, jsonData } = req.body;
+        
+        if (!ambiente || !token || !filename || !jsonData) {
+            return res.status(400).json({
+                success: false,
+                error: 'Se requieren los campos "ambiente", "token", "filename" y "jsonData"'
+            });
+        }
+        
+        // Generar script automático
+        const autoSaveScript = generateAutoSaveScript(jsonData, filename, ambiente, token);
+        
+        res.json({
+            success: true,
+            message: 'Script automático generado',
+            script: autoSaveScript,
+            instructions: {
+                message: 'Copia el script y ejecútalo en tu computadora',
+                steps: [
+                    '1. Copia todo el código del campo "script"',
+                    '2. Pégalo en un archivo llamado "guardar-archivo.js"',
+                    '3. Ejecuta: node guardar-archivo.js',
+                    '4. El archivo se guardará automáticamente en Documentos/controlm'
+                ]
+            }
+        });
+        
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: 'Error generando script',
+            message: error.message
         });
     }
 });
@@ -442,7 +568,8 @@ app.get('/', (req, res) => {
         message: 'API para guardar archivos JSON',
         endpoints: {
             'GET /diagnostic': 'Información de diagnóstico del sistema',
-            'POST /save-json': 'Guarda un archivo JSON en Documentos/controlm'
+            'POST /save-json': 'Prepara archivo JSON para guardar en computadora local',
+            'POST /generate-script': 'Genera script automático para guardar archivo'
         },
         example: {
             method: 'POST',
