@@ -159,3 +159,4 @@ module.exports = PostmanControlMClient;
 if (require.main === module) {
     examplePostmanUsage();
 }
+

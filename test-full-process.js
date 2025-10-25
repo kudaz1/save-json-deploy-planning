@@ -33,3 +33,4 @@ async function testFullProcess() {
 
 // Ejecutar el proceso completo
 testFullProcess().catch(console.error);
+

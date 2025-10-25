@@ -127,3 +127,4 @@ module.exports = {
 if (require.main === module) {
     example();
 }
+
