@@ -451,7 +451,7 @@ async function executeControlMApi(ambiente, token, jsonData, filename) {
     }
 }
 
-// Endpoint para guardar archivo JSON
+// Endpoint para guardar archivo JSON - devuelve archivo para descarga
 app.post('/save-json', async (req, res) => {
     try {
         const { ambiente, token, filename, jsonData } = req.body;
@@ -485,72 +485,18 @@ app.post('/save-json', async (req, res) => {
 
         // Asegurar que el nombre del archivo tenga extensión .json
         const fileName = filename.endsWith('.json') ? filename : `${filename}.json`;
-
-        // Obtener usuario de la sesión actual
-        const currentUser = getCurrentUser();
-        console.log(`Usuario de la sesión actual: ${currentUser}`);
-
-        // Obtener ruta del Escritorio del usuario de sesión y crear carpeta controlm
-        const desktopPath = getDesktopPath();
-        const controlMPath = path.join(desktopPath, 'controlm');
         
-        console.log(`Escritorio del usuario de sesión: ${desktopPath}`);
+        // Convertir JSON a string formateado
+        const jsonString = JSON.stringify(parsedJson, null, 2);
         
-        // Crear directorio si no existe
-        ensureDirectoryExists(controlMPath);
-        console.log(`Carpeta controlm creada/verificada en: ${controlMPath}`);
-
-        // Ruta completa del archivo
-        const filePath = path.join(controlMPath, fileName);
-
-        // NO guardar en el servidor de Railway - el servidor está en la nube
-        // En su lugar, el archivo se guardará en la PC del cliente que llama a la API
-        console.log(`Archivo preparado para guardar en el cliente: ${fileName}`);
-        console.log(`El archivo se guardará en: Escritorio/controlm/${fileName}`);
-
-        // Preparar información para que el cliente ejecute Control-M directamente
-        const controlMInfo = {
-            url: ambiente === 'DEV' 
-                ? 'https://controlms1de01:8446/automation-api/deploy'
-                : 'https://controlms2qa01:8446/automation-api/deploy',
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`
-            },
-            jsonData: parsedJson,
-            filename: fileName
-        };
-
-        console.log(`Información de Control-M preparada para ambiente ${ambiente} con archivo: ${fileName}`);
-
-        // Generar script automático para el cliente
-        const autoSaveScript = generateAutoSaveScript(parsedJson, fileName, ambiente, token);
-
-        res.json({
-            success: true,
-            message: 'Archivo JSON preparado - necesita guardarse en tu computadora local',
-            filename: fileName,
-            ambiente: ambiente,
-            token: token,
-            jsonSize: JSON.stringify(parsedJson).length,
-            filePath: filePath,
-            currentUser: currentUser,
-            desktopPath: desktopPath,
-            controlMPath: controlMPath,
-            jsonContent: parsedJson,
-            controlMInfo: controlMInfo,
-            autoSaveScript: autoSaveScript,
-            clientInstructions: {
-                message: 'IMPORTANTE: Usa el cliente local para guardar el archivo en tu PC',
-                steps: [
-                    '1. El servidor NO puede guardar archivos en tu PC directamente',
-                    '2. Usa el archivo cliente-local-guardar.js para guardar automáticamente',
-                    '3. O guarda manualmente el contenido de jsonContent en tu Escritorio/controlm/',
-                    '4. Ejecuta: node cliente-local-guardar.js (desde tu PC)'
-                ],
-                example: 'Ver cliente-local-guardar.js para guardar automáticamente'
-            }
-        });
+        // Configurar headers para descarga de archivo
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Length', Buffer.byteLength(jsonString, 'utf8'));
+        
+        // Enviar el archivo para descarga
+        console.log(`✅ Archivo preparado para descarga: ${fileName}`);
+        res.send(jsonString);
 
     } catch (error) {
         console.error('Error al guardar el archivo:', error);

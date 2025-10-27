@@ -3,122 +3,71 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// Configuración - CAMBIA ESTOS VALORES SEGÚN TUS NECESIDADES
-const CONFIG = {
-    apiUrl: 'https://save-json-deploy-planning-production.up.railway.app/save-json',
-    ambiente: 'DEV', // o 'QA'
-    token: 'tu-bearer-token-aqui', // CAMBIA ESTE TOKEN
-    filename: 'mi-archivo-controlm', // CAMBIA ESTE NOMBRE
-    jsonData: {
-        // CAMBIA ESTOS DATOS SEGÚN TUS NECESIDADES
-        "MI_JOB": {
-            "Type": "SimpleFolder",
-            "ControlmServer": "COOPEUCH",
-            "OrderMethod": "Manual",
-            "CC1040P2": {
-                "Type": "Job:0S400:Full:CommandLine",
-                "CommandLine": "CALL PGM (RBIENVFCL) PARM('CTINTDEM' 'NEXDEM')",
-                "SubApplication": "MI_SUBAPP",
-                "Priority": "Very Low",
-                "FileName": "CC1040P2",
-                "Confirm": true,
-                "Host": "ibsqa",
-                "FilePath": "CC1040P2",
-                "CreatedBy": "emuser",
-                "Description": "MI DESCRIPCION",
-                "RunAs": "07ABATCH",
-                "Application": "MI_APLICACION"
+/**
+ * Cliente que llama a la API y guarda el archivo en Escritorio/controlm
+ */
+async function usarAPI() {
+    console.log('🚀 Llamando a la API...\n');
+    
+    // ⚠️ CONFIGURA ESTOS VALORES:
+    const apiUrl = 'https://save-json-deploy-planning-production.up.railway.app/save-json';
+    
+    const requestData = {
+        ambiente: 'DEV', // o 'QA'
+        token: 'tu-bearer-token-aqui', // ⚠️ CAMBIA ESTE TOKEN
+        filename: 'mi-archivo', // ⚠️ NOMBRE DEL ARCHIVO (sin .json)
+        
+        jsonData: { // ⚠️ TU JSON AQUÍ
+            "MI_JOB": {
+                "Type": "SimpleFolder",
+                "ControlmServer": "COOPEUCH",
+                "OrderMethod": "Manual"
             }
         }
-    }
-};
-
-async function usarAPI() {
+    };
+    
     try {
-        console.log('=== USANDO API DE RAILWAY ===');
-        console.log('📡 Llamando a la API...');
-        
-        // Llamar a la API
-        const response = await axios.post(CONFIG.apiUrl, {
-            ambiente: CONFIG.ambiente,
-            token: CONFIG.token,
-            filename: CONFIG.filename,
-            jsonData: CONFIG.jsonData
-        }, {
-            headers: {
-                'Content-Type': 'application/json'
-            },
+        // 1. Llamar a la API - recibirá el archivo para descarga
+        const response = await axios.post(apiUrl, requestData, {
+            responseType: 'arraybuffer',
             timeout: 30000
         });
-
-        if (!response.data.success) {
-            throw new Error('La API falló: ' + response.data.error);
-        }
-
-        console.log('✅ API respondió exitosamente');
-        console.log('📄 Mensaje:', response.data.message);
-
-        // Obtener el contenido JSON
-        const { jsonContent, filename } = response.data;
         
-        if (!jsonContent) {
-            throw new Error('La API no devolvió jsonContent');
-        }
-        
-        // Determinar ruta del Escritorio en esta computadora
+        // 2. Detectar Escritorio y crear carpeta controlm
         const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Escritorio');
         const systemPath = path.join(os.homedir(), 'Desktop');
-        
-        let desktopPath;
-        if (fs.existsSync(oneDrivePath)) {
-            desktopPath = oneDrivePath;
-            console.log('📁 Usando OneDrive Escritorio');
-        } else {
-            desktopPath = systemPath;
-            console.log('📁 Usando Desktop del sistema');
-        }
-        
+        const desktopPath = fs.existsSync(oneDrivePath) ? oneDrivePath : systemPath;
         const controlMPath = path.join(desktopPath, 'controlm');
         
-        console.log(`\n=== GUARDANDO EN ESTA COMPUTADORA ===`);
-        console.log(`Ruta del Escritorio: ${desktopPath}`);
-        console.log(`Ruta de controlm: ${controlMPath}`);
-        
-        // Crear carpeta controlm si no existe
+        // Crear carpeta si no existe
         if (!fs.existsSync(controlMPath)) {
             fs.mkdirSync(controlMPath, { recursive: true });
-            console.log(`✅ Carpeta controlm creada: ${controlMPath}`);
-        } else {
-            console.log(`ℹ️ Carpeta controlm ya existe: ${controlMPath}`);
+            console.log(`✅ Carpeta creada: ${controlMPath}`);
         }
         
-        // Ruta completa del archivo
-        const filePath = path.join(controlMPath, filename);
+        // 3. Guardar el archivo con el nombre que especificaste
+        const fileName = requestData.filename.endsWith('.json') 
+            ? requestData.filename 
+            : `${requestData.filename}.json`;
+        const filePath = path.join(controlMPath, fileName);
         
-        // Guardar el archivo JSON
-        fs.writeFileSync(filePath, JSON.stringify(jsonContent, null, 2));
-        console.log(`✅ Archivo JSON guardado: ${filePath}`);
+        fs.writeFileSync(filePath, Buffer.from(response.data));
         
-        // Verificar que se guardó
-        if (fs.existsSync(filePath)) {
-            const stats = fs.statSync(filePath);
-            console.log(`📁 Tamaño: ${stats.size} bytes`);
-            console.log(`📅 Creado: ${stats.birthtime}`);
+        console.log(`✅ Archivo guardado: ${filePath}`);
+        console.log(`📏 Tamaño: ${response.data.length} bytes`);
+        console.log(`\n🎉 ¡LISTO! El archivo "${fileName}" está en tu Escritorio/controlm\n`);
+        
+        // Abrir carpeta en explorador
+        if (process.platform === 'win32') {
+            require('child_process').exec(`explorer "${controlMPath}"`);
+            console.log('📂 Abriendo carpeta...');
         }
-        
-        console.log('\n🎉 ¡ARCHIVO GUARDADO EXITOSAMENTE!');
-        console.log(`📂 Ubicación: ${filePath}`);
-        console.log('\n📋 Para usar este archivo:');
-        console.log('1. Navega a la carpeta controlm en tu Escritorio');
-        console.log('2. Encuentra el archivo JSON');
-        console.log('3. Úsalo con Control-M según tus necesidades');
         
     } catch (error) {
-        console.error('❌ Error:', error.message);
-        console.log('\n🔧 Posibles soluciones:');
-        console.log('1. Verifica que la URL de la API sea correcta');
-        console.log('2. Verifica que el token sea válido');
-        console.log('3. Verifica tu conexión a internet');
+        console.error('\n❌ Error:', error.message);
+        if (error.response) {
+            console.error('📊 Status:', error.response.status);
+        }
     }
 }
 
