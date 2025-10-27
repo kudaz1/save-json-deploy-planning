@@ -486,23 +486,47 @@ app.post('/save-json', async (req, res) => {
         // Asegurar que el nombre del archivo tenga extensión .json
         const fileName = filename.endsWith('.json') ? filename : `${filename}.json`;
         
-        // Convertir JSON a string formateado
-        const jsonString = JSON.stringify(parsedJson, null, 2);
+        // Obtener usuario de Windows y ruta del Escritorio
+        const currentUser = getCurrentUser();
+        console.log(`Usuario detectado: ${currentUser}`);
         
-        // Configurar headers para descarga de archivo
-        res.setHeader('Content-Type', 'application/json; charset=utf-8');
-        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-        res.setHeader('Content-Length', Buffer.byteLength(jsonString, 'utf8'));
+        // Obtener ruta del Escritorio
+        const desktopPath = getDesktopPath();
+        const controlMPath = path.join(desktopPath, 'controlm');
         
-        // Enviar el archivo para descarga
-        console.log(`✅ Archivo preparado para descarga: ${fileName}`);
-        res.send(jsonString);
+        console.log(`Escritorio: ${desktopPath}`);
+        console.log(`Carpeta controlm: ${controlMPath}`);
+        
+        // Crear carpeta controlm si no existe
+        if (!fs.existsSync(controlMPath)) {
+            fs.mkdirSync(controlMPath, { recursive: true });
+            console.log(`✅ Carpeta creada: ${controlMPath}`);
+        }
+        
+        // Ruta completa del archivo
+        const filePath = path.join(controlMPath, fileName);
+        
+        // Guardar el archivo JSON
+        fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2));
+        console.log(`✅ Archivo guardado: ${filePath}`);
+        
+        // Responder con éxito
+        res.json({
+            success: true,
+            message: `Archivo guardado exitosamente en tu Escritorio`,
+            filename: fileName,
+            filePath: filePath,
+            desktopPath: desktopPath,
+            controlMPath: controlMPath,
+            currentUser: currentUser
+        });
 
     } catch (error) {
         console.error('Error al guardar el archivo:', error);
         res.status(500).json({
             success: false,
-            error: 'Error interno del servidor al guardar el archivo'
+            error: 'Error interno del servidor al guardar el archivo',
+            details: error.message
         });
     }
 });
