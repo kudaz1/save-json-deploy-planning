@@ -503,10 +503,10 @@ app.post('/save-json', async (req, res) => {
         // Ruta completa del archivo
         const filePath = path.join(controlMPath, fileName);
 
-        // NO guardar el archivo en el servidor, solo preparar la información
-        // El archivo se guardará en el cliente (tu computadora)
-        console.log(`Archivo JSON preparado para guardar en: ${filePath}`);
-        console.log(`Contenido del archivo:`, JSON.stringify(parsedJson, null, 2));
+        // Guardar el archivo en el servidor (si está corriendo localmente)
+        console.log(`Guardando archivo JSON en: ${filePath}`);
+        fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2));
+        console.log(`✅ Archivo JSON guardado exitosamente en: ${filePath}`);
 
         // Preparar información para que el cliente ejecute Control-M directamente
         const controlMInfo = {
@@ -528,7 +528,7 @@ app.post('/save-json', async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Archivo JSON preparado para guardar automáticamente en tu computadora',
+            message: 'Archivo JSON guardado exitosamente en el Escritorio',
             filename: fileName,
             ambiente: ambiente,
             token: token,
@@ -541,12 +541,11 @@ app.post('/save-json', async (req, res) => {
             controlMInfo: controlMInfo,
             autoSaveScript: autoSaveScript,
             clientInstructions: {
-                message: 'Ejecuta el script automático para guardar el archivo en tu computadora',
+                message: 'Archivo guardado exitosamente en el servidor',
                 steps: [
-                    '1. Copia el código de autoSaveScript',
-                    '2. Pégalo en un archivo .js en tu computadora',
-                    '3. Ejecuta: node archivo.js',
-                    '4. El archivo se guardará automáticamente en Escritorio/controlm'
+                    '1. El archivo se ha guardado en: ' + filePath,
+                    '2. Navega a tu Escritorio para ver la carpeta controlm',
+                    '3. El archivo JSON está listo para usar con Control-M'
                 ],
                 example: 'Ver documentación para ejemplos de implementación'
             }
