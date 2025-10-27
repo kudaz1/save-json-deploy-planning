@@ -503,10 +503,10 @@ app.post('/save-json', async (req, res) => {
         // Ruta completa del archivo
         const filePath = path.join(controlMPath, fileName);
 
-        // Guardar el archivo en el servidor (si está corriendo localmente)
-        console.log(`Guardando archivo JSON en: ${filePath}`);
-        fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2));
-        console.log(`✅ Archivo JSON guardado exitosamente en: ${filePath}`);
+        // NO guardar en el servidor de Railway - el servidor está en la nube
+        // En su lugar, el archivo se guardará en la PC del cliente que llama a la API
+        console.log(`Archivo preparado para guardar en el cliente: ${fileName}`);
+        console.log(`El archivo se guardará en: Escritorio/controlm/${fileName}`);
 
         // Preparar información para que el cliente ejecute Control-M directamente
         const controlMInfo = {
@@ -528,7 +528,7 @@ app.post('/save-json', async (req, res) => {
 
         res.json({
             success: true,
-            message: 'Archivo JSON guardado exitosamente en el Escritorio',
+            message: 'Archivo JSON preparado - necesita guardarse en tu computadora local',
             filename: fileName,
             ambiente: ambiente,
             token: token,
@@ -541,13 +541,14 @@ app.post('/save-json', async (req, res) => {
             controlMInfo: controlMInfo,
             autoSaveScript: autoSaveScript,
             clientInstructions: {
-                message: 'Archivo guardado exitosamente en el servidor',
+                message: 'IMPORTANTE: Usa el cliente local para guardar el archivo en tu PC',
                 steps: [
-                    '1. El archivo se ha guardado en: ' + filePath,
-                    '2. Navega a tu Escritorio para ver la carpeta controlm',
-                    '3. El archivo JSON está listo para usar con Control-M'
+                    '1. El servidor NO puede guardar archivos en tu PC directamente',
+                    '2. Usa el archivo cliente-local-guardar.js para guardar automáticamente',
+                    '3. O guarda manualmente el contenido de jsonContent en tu Escritorio/controlm/',
+                    '4. Ejecuta: node cliente-local-guardar.js (desde tu PC)'
                 ],
-                example: 'Ver documentación para ejemplos de implementación'
+                example: 'Ver cliente-local-guardar.js para guardar automáticamente'
             }
         });
 
@@ -556,6 +557,62 @@ app.post('/save-json', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Error interno del servidor al guardar el archivo'
+        });
+    }
+});
+
+// Endpoint para descargar archivo JSON directamente
+app.post('/download-json', async (req, res) => {
+    try {
+        const { ambiente, token, filename, jsonData } = req.body;
+
+        // Validar que se proporcionen los datos requeridos
+        if (!ambiente || !token || !filename || !jsonData) {
+            return res.status(400).json({
+                success: false,
+                error: 'Se requieren los campos "ambiente", "token", "filename" y "jsonData"'
+            });
+        }
+
+        // Validar que el ambiente sea DEV o QA
+        if (!['DEV', 'QA'].includes(ambiente)) {
+            return res.status(400).json({
+                success: false,
+                error: 'El campo "ambiente" solo puede tener los valores "DEV" o "QA"'
+            });
+        }
+
+        // Validar que jsonData sea un objeto válido
+        let parsedJson;
+        try {
+            parsedJson = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
+        } catch (error) {
+            return res.status(400).json({
+                success: false,
+                error: 'El campo jsonData debe contener un JSON válido'
+            });
+        }
+
+        // Asegurar que el nombre del archivo tenga extensión .json
+        const fileName = filename.endsWith('.json') ? filename : `${filename}.json`;
+
+        // Convertir JSON a string
+        const jsonString = JSON.stringify(parsedJson, null, 2);
+
+        // Configurar headers para descarga de archivo
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        res.setHeader('Content-Length', Buffer.byteLength(jsonString));
+
+        // Enviar el archivo como descarga
+        console.log(`Descargando archivo: ${fileName}`);
+        res.send(jsonString);
+
+    } catch (error) {
+        console.error('Error al descargar el archivo:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error interno del servidor al descargar el archivo'
         });
     }
 });
