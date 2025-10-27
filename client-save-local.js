@@ -32,12 +32,23 @@ async function saveJsonLocally(apiUrl, requestData) {
         // Obtener información del archivo
         const { filename, jsonContent, controlMInfo } = response.data;
         
-        // Obtener ruta de Documentos local (OneDrive)
-        const documentsPath = path.join(os.homedir(), 'OneDrive', 'Documentos');
-        const controlMPath = path.join(documentsPath, 'controlm');
+        // Obtener ruta del Escritorio local (OneDrive)
+        const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Escritorio');
+        const systemPath = path.join(os.homedir(), 'Desktop');
+        
+        let desktopPath;
+        if (fs.existsSync(oneDrivePath)) {
+            desktopPath = oneDrivePath;
+            console.log('📁 Usando OneDrive Escritorio');
+        } else {
+            desktopPath = systemPath;
+            console.log('📁 Usando Desktop del sistema');
+        }
+        
+        const controlMPath = path.join(desktopPath, 'controlm');
         
         console.log(`\n=== GUARDANDO EN COMPUTADORA LOCAL ===`);
-        console.log(`Ruta de Documentos: ${documentsPath}`);
+        console.log(`Ruta del Escritorio: ${desktopPath}`);
         console.log(`Ruta de controlm: ${controlMPath}`);
         
         // Crear carpeta controlm si no existe

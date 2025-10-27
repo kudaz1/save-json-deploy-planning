@@ -1,16 +1,23 @@
+// SCRIPT PARA GUARDAR ARCHIVOS EN CUALQUIER COMPUTADORA
+// Copia este archivo a cualquier computadora y ejecuta: node guardar-archivo-cualquier-pc.js
+
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-// Configuración - CAMBIA ESTOS VALORES SEGÚN TUS NECESIDADES
+// CONFIGURACIÓN - CAMBIA ESTOS VALORES SEGÚN TUS NECESIDADES
 const CONFIG = {
+    // URL de tu API en Railway
     apiUrl: 'https://save-json-deploy-planning-production.up.railway.app/save-json',
+    
+    // Datos de tu archivo JSON
     ambiente: 'DEV', // o 'QA'
     token: 'tu-bearer-token-aqui', // CAMBIA ESTE TOKEN
     filename: 'mi-archivo-controlm', // CAMBIA ESTE NOMBRE
+    
+    // Datos JSON que quieres guardar
     jsonData: {
-        // CAMBIA ESTOS DATOS SEGÚN TUS NECESIDADES
         "MI_JOB": {
             "Type": "SimpleFolder",
             "ControlmServer": "COOPEUCH",
@@ -33,10 +40,11 @@ const CONFIG = {
     }
 };
 
-async function usarAPI() {
+async function guardarArchivoEnEstaComputadora() {
     try {
-        console.log('=== USANDO API DE RAILWAY ===');
-        console.log('📡 Llamando a la API...');
+        console.log('=== GUARDANDO ARCHIVO EN ESTA COMPUTADORA ===');
+        console.log(`🌐 Llamando a la API: ${CONFIG.apiUrl}`);
+        console.log(`📄 Archivo: ${CONFIG.filename}`);
         
         // Llamar a la API
         const response = await axios.post(CONFIG.apiUrl, {
@@ -58,14 +66,14 @@ async function usarAPI() {
         console.log('✅ API respondió exitosamente');
         console.log('📄 Mensaje:', response.data.message);
 
-        // Obtener el contenido JSON
+        // Obtener el contenido JSON de la respuesta
         const { jsonContent, filename } = response.data;
         
         if (!jsonContent) {
             throw new Error('La API no devolvió jsonContent');
         }
         
-        // Determinar ruta del Escritorio en esta computadora
+        // Detectar la ruta del Escritorio en ESTA computadora
         const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Escritorio');
         const systemPath = path.join(os.homedir(), 'Desktop');
         
@@ -81,8 +89,10 @@ async function usarAPI() {
         const controlMPath = path.join(desktopPath, 'controlm');
         
         console.log(`\n=== GUARDANDO EN ESTA COMPUTADORA ===`);
-        console.log(`Ruta del Escritorio: ${desktopPath}`);
-        console.log(`Ruta de controlm: ${controlMPath}`);
+        console.log(`👤 Usuario: ${os.userInfo().username}`);
+        console.log(`🏠 Directorio home: ${os.homedir()}`);
+        console.log(`📁 Ruta del Escritorio: ${desktopPath}`);
+        console.log(`📁 Ruta de controlm: ${controlMPath}`);
         
         // Crear carpeta controlm si no existe
         if (!fs.existsSync(controlMPath)) {
@@ -106,21 +116,35 @@ async function usarAPI() {
             console.log(`📅 Creado: ${stats.birthtime}`);
         }
         
-        console.log('\n🎉 ¡ARCHIVO GUARDADO EXITOSAMENTE!');
+        console.log('\n🎉 ¡ARCHIVO GUARDADO EXITOSAMENTE EN ESTA COMPUTADORA!');
         console.log(`📂 Ubicación: ${filePath}`);
         console.log('\n📋 Para usar este archivo:');
         console.log('1. Navega a la carpeta controlm en tu Escritorio');
         console.log('2. Encuentra el archivo JSON');
         console.log('3. Úsalo con Control-M según tus necesidades');
         
+        // Abrir la carpeta en el explorador (Windows)
+        if (process.platform === 'win32') {
+            try {
+                require('child_process').exec(`explorer "${controlMPath}"`);
+                console.log('📂 Abriendo carpeta en el explorador...');
+            } catch (error) {
+                console.log('ℹ️ No se pudo abrir el explorador automáticamente');
+            }
+        }
+        
     } catch (error) {
         console.error('❌ Error:', error.message);
         console.log('\n🔧 Posibles soluciones:');
-        console.log('1. Verifica que la URL de la API sea correcta');
-        console.log('2. Verifica que el token sea válido');
-        console.log('3. Verifica tu conexión a internet');
+        console.log('1. Verifica que tengas Node.js instalado');
+        console.log('2. Verifica que la URL de la API sea correcta');
+        console.log('3. Verifica que el token sea válido');
+        console.log('4. Verifica tu conexión a internet');
+        console.log('5. Verifica que tengas permisos de escritura en el Escritorio');
     }
 }
 
-// Ejecutar
-usarAPI();
+// Ejecutar automáticamente
+console.log('🚀 Iniciando guardado de archivo...');
+guardarArchivoEnEstaComputadora();
+

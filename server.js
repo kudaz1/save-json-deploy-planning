@@ -211,6 +211,101 @@ function getDocumentsPath() {
     }
 }
 
+// Función para obtener la ruta del Escritorio del usuario de sesión actual
+function getDesktopPath() {
+    try {
+        const currentUser = getCurrentUser();
+        console.log(`Intentando obtener Escritorio para usuario: ${currentUser}`);
+        
+        let desktopPath = null;
+        
+        // En Windows, probar diferentes rutas
+        if (process.platform === 'win32') {
+            // Método 1: Ruta OneDrive Escritorio (preferida)
+            const oneDrivePath = path.join('C:', 'Users', currentUser, 'OneDrive', 'Escritorio');
+            console.log(`Probando ruta OneDrive Escritorio: ${oneDrivePath}`);
+            
+            if (fs.existsSync(oneDrivePath)) {
+                desktopPath = oneDrivePath;
+                console.log(`Ruta OneDrive Escritorio encontrada: ${desktopPath}`);
+            } else {
+                console.log('Ruta OneDrive Escritorio no existe, probando otras opciones...');
+                
+                // Método 2: Ruta estándar C:\Users\[usuario]\Desktop
+                const standardPath = path.join('C:', 'Users', currentUser, 'Desktop');
+                console.log(`Probando ruta estándar: ${standardPath}`);
+                
+                if (fs.existsSync(standardPath)) {
+                    desktopPath = standardPath;
+                    console.log(`Ruta estándar encontrada: ${desktopPath}`);
+                } else {
+                    console.log('Ruta estándar no existe, probando otras opciones...');
+                    
+                    // Método 3: Usar variable de entorno USERPROFILE
+                    const userProfile = process.env.USERPROFILE;
+                    if (userProfile) {
+                        const envPath = path.join(userProfile, 'Desktop');
+                        console.log(`Probando ruta con USERPROFILE: ${envPath}`);
+                        if (fs.existsSync(envPath)) {
+                            desktopPath = envPath;
+                            console.log(`Ruta con USERPROFILE encontrada: ${desktopPath}`);
+                        }
+                    }
+                    
+                    // Método 4: Usar HOMEDRIVE y HOMEPATH
+                    if (!desktopPath) {
+                        const homeDrive = process.env.HOMEDRIVE;
+                        const homePath = process.env.HOMEPATH;
+                        if (homeDrive && homePath) {
+                            const envPath = path.join(homeDrive, homePath, 'Desktop');
+                            console.log(`Probando ruta con HOMEDRIVE/HOMEPATH: ${envPath}`);
+                            if (fs.existsSync(envPath)) {
+                                desktopPath = envPath;
+                                console.log(`Ruta con HOMEDRIVE/HOMEPATH encontrada: ${desktopPath}`);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // En sistemas Unix-like
+            const unixPath = path.join('/home', currentUser, 'Desktop');
+            console.log(`Probando ruta Unix: ${unixPath}`);
+            
+            if (fs.existsSync(unixPath)) {
+                desktopPath = unixPath;
+                console.log(`Ruta Unix encontrada: ${desktopPath}`);
+            } else {
+                // Probar con HOME
+                const homeDir = process.env.HOME;
+                if (homeDir) {
+                    const homePath = path.join(homeDir, 'Desktop');
+                    console.log(`Probando ruta con HOME: ${homePath}`);
+                    if (fs.existsSync(homePath)) {
+                        desktopPath = homePath;
+                        console.log(`Ruta con HOME encontrada: ${desktopPath}`);
+                    }
+                }
+            }
+        }
+        
+        // Fallback final
+        if (!desktopPath) {
+            desktopPath = path.join(os.homedir(), 'Desktop');
+            console.log(`Usando fallback: ${desktopPath}`);
+        }
+        
+        console.log(`Ruta final del Escritorio: ${desktopPath}`);
+        return desktopPath;
+        
+    } catch (error) {
+        console.warn('Error obteniendo ruta del Escritorio:', error.message);
+        const fallbackPath = path.join(os.homedir(), 'Desktop');
+        console.log(`Ruta de fallback por error: ${fallbackPath}`);
+        return fallbackPath;
+    }
+}
+
 // Función para crear directorio si no existe
 function ensureDirectoryExists(dirPath) {
     if (!fs.existsSync(dirPath)) {
@@ -239,22 +334,22 @@ async function guardarArchivoAutomaticamente() {
         const ambiente = '${ambiente}';
         const token = '${token}';
         
-        // Detectar ruta de Documentos en esta computadora
-        const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Documentos');
-        const systemPath = path.join(os.homedir(), 'Documents');
+        // Detectar ruta del Escritorio en esta computadora
+        const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Escritorio');
+        const systemPath = path.join(os.homedir(), 'Desktop');
         
-        let documentsPath;
+        let desktopPath;
         if (fs.existsSync(oneDrivePath)) {
-            documentsPath = oneDrivePath;
-            console.log('📁 Usando OneDrive Documentos');
+            desktopPath = oneDrivePath;
+            console.log('📁 Usando OneDrive Escritorio');
         } else {
-            documentsPath = systemPath;
-            console.log('📁 Usando Documents del sistema');
+            desktopPath = systemPath;
+            console.log('📁 Usando Desktop del sistema');
         }
         
-        const controlMPath = path.join(documentsPath, 'controlm');
+        const controlMPath = path.join(desktopPath, 'controlm');
         
-        console.log(\`Ruta de Documentos: \${documentsPath}\`);
+        console.log(\`Ruta del Escritorio: \${desktopPath}\`);
         console.log(\`Ruta de controlm: \${controlMPath}\`);
         
         // Crear carpeta controlm si no existe
@@ -289,7 +384,7 @@ async function guardarArchivoAutomaticamente() {
     } catch (error) {
         console.error('❌ Error:', error.message);
         console.log('\\n🔧 Posibles soluciones:');
-        console.log('1. Verifica que tengas permisos de escritura en Documentos');
+        console.log('1. Verifica que tengas permisos de escritura en el Escritorio');
         console.log('2. Ejecuta como administrador si es necesario');
         console.log('3. Verifica que Node.js esté instalado');
     }
@@ -395,11 +490,11 @@ app.post('/save-json', async (req, res) => {
         const currentUser = getCurrentUser();
         console.log(`Usuario de la sesión actual: ${currentUser}`);
 
-        // Obtener ruta de Documentos del usuario de sesión y crear carpeta controlm
-        const documentsPath = getDocumentsPath();
-        const controlMPath = path.join(documentsPath, 'controlm');
+        // Obtener ruta del Escritorio del usuario de sesión y crear carpeta controlm
+        const desktopPath = getDesktopPath();
+        const controlMPath = path.join(desktopPath, 'controlm');
         
-        console.log(`Documentos del usuario de sesión: ${documentsPath}`);
+        console.log(`Escritorio del usuario de sesión: ${desktopPath}`);
         
         // Crear directorio si no existe
         ensureDirectoryExists(controlMPath);
@@ -440,7 +535,7 @@ app.post('/save-json', async (req, res) => {
             jsonSize: JSON.stringify(parsedJson).length,
             filePath: filePath,
             currentUser: currentUser,
-            documentsPath: documentsPath,
+            desktopPath: desktopPath,
             controlMPath: controlMPath,
             jsonContent: parsedJson,
             controlMInfo: controlMInfo,
@@ -451,7 +546,7 @@ app.post('/save-json', async (req, res) => {
                     '1. Copia el código de autoSaveScript',
                     '2. Pégalo en un archivo .js en tu computadora',
                     '3. Ejecuta: node archivo.js',
-                    '4. El archivo se guardará automáticamente en Documentos/controlm'
+                    '4. El archivo se guardará automáticamente en Escritorio/controlm'
                 ],
                 example: 'Ver documentación para ejemplos de implementación'
             }
@@ -509,8 +604,8 @@ app.post('/generate-script', (req, res) => {
 app.get('/diagnostic', (req, res) => {
     try {
         const currentUser = getCurrentUser();
-        const documentsPath = getDocumentsPath();
-        const controlMPath = path.join(documentsPath, 'controlm');
+        const desktopPath = getDesktopPath();
+        const controlMPath = path.join(desktopPath, 'controlm');
         
         // Información del sistema
         const systemInfo = {
@@ -526,8 +621,8 @@ app.get('/diagnostic', (req, res) => {
             },
             osUserInfo: os.userInfo(),
             currentUser: currentUser,
-            documentsPath: documentsPath,
-            documentsExists: fs.existsSync(documentsPath),
+            desktopPath: desktopPath,
+            desktopExists: fs.existsSync(desktopPath),
             controlMPath: controlMPath,
             controlMExists: fs.existsSync(controlMPath),
             // Información adicional de Windows
@@ -547,8 +642,8 @@ app.get('/diagnostic', (req, res) => {
             recommendations: {
                 message: 'Revisa la información del sistema para verificar las rutas detectadas',
                 nextSteps: [
-                    'Verifica que documentsPath sea correcto',
-                    'Verifica que documentsExists sea true',
+                    'Verifica que desktopPath sea correcto',
+                    'Verifica que desktopExists sea true',
                     'Si las rutas no son correctas, revisa las variables de entorno'
                 ]
             }
@@ -587,11 +682,11 @@ app.get('/', (req, res) => {
 // Iniciar servidor
 app.listen(PORT, () => {
     const currentUser = getCurrentUser();
-    const documentsPath = getDocumentsPath();
-    const controlMPath = path.join(documentsPath, 'controlm');
+    const desktopPath = getDesktopPath();
+    const controlMPath = path.join(desktopPath, 'controlm');
     
     console.log(`Servidor corriendo en http://localhost:${PORT}`);
     console.log(`Usuario de la sesión: ${currentUser}`);
-    console.log(`Documentos del usuario de sesión: ${documentsPath}`);
+    console.log(`Escritorio del usuario de sesión: ${desktopPath}`);
     console.log(`Carpeta controlm: ${controlMPath}`);
 });

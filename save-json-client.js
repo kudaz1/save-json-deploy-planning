@@ -57,28 +57,29 @@ async function saveJsonFromAPI(options) {
             throw new Error('La API no devolvió jsonContent');
         }
         
-        // Determinar ruta de Documentos
-        let finalDocumentsPath;
+        // Determinar ruta del Escritorio
+        let finalDesktopPath;
         if (documentsPath) {
-            finalDocumentsPath = documentsPath;
+            // Mantener retrocompatibilidad pero usar escritorio
+            finalDesktopPath = documentsPath;
         } else {
-            // Intentar OneDrive primero, luego Documents del sistema
-            const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Documentos');
-            const systemPath = path.join(os.homedir(), 'Documents');
+            // Intentar OneDrive primero, luego Desktop del sistema
+            const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Escritorio');
+            const systemPath = path.join(os.homedir(), 'Desktop');
             
             if (fs.existsSync(oneDrivePath)) {
-                finalDocumentsPath = oneDrivePath;
-                console.log('📁 Usando OneDrive Documentos');
+                finalDesktopPath = oneDrivePath;
+                console.log('📁 Usando OneDrive Escritorio');
             } else {
-                finalDocumentsPath = systemPath;
-                console.log('📁 Usando Documents del sistema');
+                finalDesktopPath = systemPath;
+                console.log('📁 Usando Desktop del sistema');
             }
         }
         
-        const controlMPath = path.join(finalDocumentsPath, 'controlm');
+        const controlMPath = path.join(finalDesktopPath, 'controlm');
         
         console.log(`\n=== GUARDANDO EN COMPUTADORA LOCAL ===`);
-        console.log(`Ruta de Documentos: ${finalDocumentsPath}`);
+        console.log(`Ruta del Escritorio: ${finalDesktopPath}`);
         console.log(`Ruta de controlm: ${controlMPath}`);
         
         // Crear carpeta controlm si no existe
@@ -111,7 +112,7 @@ async function saveJsonFromAPI(options) {
             filePath: filePath,
             filename: filename,
             controlMInfo: controlMInfo,
-            documentsPath: finalDocumentsPath,
+            desktopPath: finalDesktopPath,
             controlMPath: controlMPath
         };
 
