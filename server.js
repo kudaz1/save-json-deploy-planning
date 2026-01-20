@@ -12,8 +12,38 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '50mb' })); // Aumentado para archivos grandes
+
+// Middleware para manejar errores de parsing JSON
+app.use(express.json({ 
+    limit: '50mb',
+    strict: false, // Permitir JSON más flexible
+    verify: (req, res, buf, encoding) => {
+        try {
+            JSON.parse(buf.toString('utf8'));
+        } catch (e) {
+            console.error('ERROR al parsear JSON en middleware:', e.message);
+            console.error('Posición del error:', e.message.match(/position (\d+)/)?.[1]);
+            console.error('Primeros 500 caracteres del body:', buf.toString('utf8').substring(0, 500));
+            throw new Error(`JSON inválido: ${e.message}`);
+        }
+    }
+}));
+
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Middleware para capturar errores de parsing
+app.use((error, req, res, next) => {
+    if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
+        console.error('ERROR de sintaxis JSON:', error.message);
+        return res.status(400).json({
+            success: false,
+            error: 'JSON inválido en el body de la petición',
+            details: error.message,
+            hint: 'Verifica que el JSON esté correctamente formateado, especialmente las comillas'
+        });
+    }
+    next();
+});
 
 // Función para obtener el usuario de la sesión actual
 function getCurrentUser() {
