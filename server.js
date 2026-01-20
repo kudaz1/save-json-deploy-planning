@@ -12,7 +12,8 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' })); // Aumentado para archivos grandes
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Función para obtener el usuario de la sesión actual
 function getCurrentUser() {
@@ -519,108 +520,176 @@ async function executeControlMApi(ambiente, token, filename) {
     }
 }
 
-// Endpoint para guardar archivo JSON en EC2 - COPIA EXACTA DE LA LÓGICA DEL SCRIPT QUE FUNCIONA
+// Endpoint para guardar archivo JSON en EC2 - VERSIÓN DEFINITIVA Y ROBUSTA
 app.post('/save-json', (req, res) => {
+    console.log('\n========================================');
     console.log('=== INICIO POST /save-json ===');
+    console.log('Timestamp:', new Date().toISOString());
+    console.log('========================================\n');
     
     try {
-        // Validaciones básicas
+        // 1. Logging inicial del request
+        console.log('[1] Request recibido');
+        console.log('[1] Body keys:', Object.keys(req.body));
+        console.log('[1] Content-Type:', req.headers['content-type']);
+        console.log('[1] Content-Length:', req.headers['content-length']);
+        
+        // 2. Validaciones básicas
         const { ambiente, token, filename, jsonData } = req.body;
+        console.log('[2] Datos extraídos:', {
+            ambiente: ambiente,
+            token: token ? token.substring(0, 10) + '...' : 'NO',
+            filename: filename,
+            hasJsonData: !!jsonData,
+            jsonDataType: typeof jsonData
+        });
+        
         if (!ambiente || !token || !filename || !jsonData) {
+            console.error('[2] ❌ ERROR: Faltan campos requeridos');
             return res.status(400).json({
                 success: false,
-                error: 'Se requieren los campos "ambiente", "token", "filename" y "jsonData"'
+                error: 'Se requieren los campos "ambiente", "token", "filename" y "jsonData"',
+                received: {
+                    ambiente: !!ambiente,
+                    token: !!token,
+                    filename: !!filename,
+                    jsonData: !!jsonData
+                }
             });
         }
+        
         if (!['DEV', 'QA'].includes(ambiente)) {
+            console.error('[2] ❌ ERROR: Ambiente inválido:', ambiente);
             return res.status(400).json({
                 success: false,
                 error: 'El campo "ambiente" solo puede tener los valores "DEV" o "QA"'
             });
         }
 
-        // Parsear JSON
+        // 3. Parsear JSON
+        console.log('[3] Parseando JSON...');
         let parsedJson;
         try {
-            parsedJson = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
+            if (typeof jsonData === 'string') {
+                console.log('[3] jsonData es string, parseando...');
+                parsedJson = JSON.parse(jsonData);
+            } else {
+                console.log('[3] jsonData es objeto, usando directamente');
+                parsedJson = jsonData;
+            }
+            console.log('[3] ✅ JSON parseado correctamente');
+            console.log('[3] Keys del JSON:', Object.keys(parsedJson));
         } catch (error) {
+            console.error('[3] ❌ ERROR parseando JSON:', error.message);
             return res.status(400).json({
                 success: false,
-                error: 'El campo jsonData debe contener un JSON válido'
+                error: 'El campo jsonData debe contener un JSON válido',
+                details: error.message
             });
         }
 
-        // Preparar nombre de archivo
-        let fileName = filename.trim();
+        // 4. Preparar nombre de archivo (preservar guiones)
+        console.log('[4] Preparando nombre de archivo...');
+        let fileName = String(filename).trim();
+        console.log('[4] Filename original:', fileName);
+        
+        // Preservar guiones y puntos, solo eliminar caracteres realmente peligrosos
+        fileName = fileName.replace(/[<>:"|?*\x00-\x1f]/g, '_').replace(/_{2,}/g, '_');
+        
         if (!fileName.endsWith('.json')) {
             fileName = fileName + '.json';
         }
-        fileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_{2,}/g, '_');
+        
         if (!fileName || fileName === '.json') {
             fileName = 'archivo.json';
         }
+        console.log('[4] Filename final:', fileName);
 
-        // ===== AQUÍ EMPIEZA LA LÓGICA IDÉNTICA AL SCRIPT QUE FUNCIONA =====
+        // ===== LÓGICA DE GUARDADO (IDÉNTICA AL SCRIPT QUE FUNCIONA) =====
         
-        // 1. Obtener rutas (EXACTO como el script)
+        // 5. Obtener rutas
+        console.log('[5] Obteniendo rutas...');
         const homeDir = os.homedir();
-        console.log('1. Home directory:', homeDir);
+        console.log('[5] Home directory:', homeDir);
         
         const desktopPath = path.join(homeDir, 'Desktop');
         const storagePath = path.join(desktopPath, 'jsonControlm');
         const filePath = path.join(storagePath, fileName);
         
-        console.log('2. Desktop path:', desktopPath);
-        console.log('3. Storage path:', storagePath);
-        console.log('4. File path:', filePath);
+        console.log('[5] Desktop path:', desktopPath);
+        console.log('[5] Storage path:', storagePath);
+        console.log('[5] File path:', filePath);
         
-        // 2. Crear carpetas (EXACTO como el script)
-        console.log('5. Creando carpetas...');
+        // 6. Crear carpetas
+        console.log('[6] Creando carpetas...');
         try {
             fs.mkdirSync(desktopPath, { recursive: true });
-            console.log('   ✅ Desktop creado');
+            console.log('[6] ✅ Desktop creado/verificado');
         } catch (e) {
-            console.log('   ℹ️ Desktop ya existe');
+            console.log('[6] ℹ️ Desktop ya existe o error (ignorado):', e.message);
         }
         
         try {
             fs.mkdirSync(storagePath, { recursive: true });
-            console.log('   ✅ jsonControlm creado');
+            console.log('[6] ✅ jsonControlm creado/verificado');
         } catch (e) {
-            console.log('   ℹ️ jsonControlm ya existe');
+            console.log('[6] ℹ️ jsonControlm ya existe o error (ignorado):', e.message);
         }
         
-        // 3. Preparar datos (EXACTO como el script)
+        // 7. Preparar datos JSON
+        console.log('[7] Preparando JSON string...');
         const jsonString = JSON.stringify(parsedJson, null, 2);
-        console.log('6. JSON preparado, longitud:', jsonString.length);
+        console.log('[7] ✅ JSON string preparado');
+        console.log('[7] Longitud:', jsonString.length, 'caracteres');
+        console.log('[7] Tamaño aproximado:', Math.round(jsonString.length / 1024), 'KB');
         
-        // 4. ESCRIBIR ARCHIVO (EXACTO como el script)
-        console.log('7. Escribiendo archivo...');
-        fs.writeFileSync(filePath, jsonString, 'utf8');
-        console.log('   ✅ Archivo escrito');
+        // 8. ESCRIBIR ARCHIVO
+        console.log('[8] Escribiendo archivo...');
+        console.log('[8] Ruta completa:', filePath);
+        try {
+            fs.writeFileSync(filePath, jsonString, 'utf8');
+            console.log('[8] ✅ Archivo escrito exitosamente');
+        } catch (writeError) {
+            console.error('[8] ❌ ERROR al escribir:', writeError.message);
+            console.error('[8] Code:', writeError.code);
+            console.error('[8] Errno:', writeError.errno);
+            throw writeError;
+        }
         
-        // 5. VERIFICAR (EXACTO como el script)
-        console.log('8. Verificando archivo...');
+        // 9. VERIFICAR INMEDIATAMENTE
+        console.log('[9] Verificando archivo...');
         if (!fs.existsSync(filePath)) {
-            throw new Error('El archivo no existe después de escribirlo');
+            console.error('[9] ❌ ERROR: Archivo no existe después de escribirlo');
+            throw new Error('El archivo no existe después de escribirlo: ' + filePath);
         }
         
         const stats = fs.statSync(filePath);
-        console.log('   ✅ Archivo existe');
-        console.log('   ✅ Tamaño:', stats.size, 'bytes');
+        console.log('[9] ✅ Archivo existe');
+        console.log('[9] ✅ Tamaño:', stats.size, 'bytes');
         
-        // 6. LEER ARCHIVO para verificar (EXACTO como el script)
-        console.log('9. Leyendo archivo...');
+        // 10. LEER Y VALIDAR ARCHIVO
+        console.log('[10] Leyendo archivo para validar...');
         const readContent = fs.readFileSync(filePath, 'utf8');
-        console.log('   ✅ Archivo leído, longitud:', readContent.length);
+        console.log('[10] ✅ Archivo leído');
+        console.log('[10] Longitud leída:', readContent.length, 'caracteres');
         
-        // 7. VERIFICAR CONTENIDO (EXACTO como el script)
-        JSON.parse(readContent);
-        console.log('   ✅ JSON válido');
+        // Validar que el JSON es válido
+        try {
+            JSON.parse(readContent);
+            console.log('[10] ✅ JSON válido');
+        } catch (parseError) {
+            console.error('[10] ❌ ERROR: JSON inválido después de leer:', parseError.message);
+            throw new Error('El archivo guardado no contiene JSON válido');
+        }
         
+        console.log('\n========================================');
         console.log('=== ✅ ÉXITO: Archivo guardado ===');
+        console.log('Filename:', fileName);
+        console.log('File path:', filePath);
+        console.log('File size:', stats.size, 'bytes');
+        console.log('========================================\n');
         
-        // Responder
+        // Responder con éxito
         res.json({
             success: true,
             message: 'Archivo guardado exitosamente',
