@@ -767,22 +767,41 @@ app.post('/save-json', (req, res) => {
             throw new Error('El archivo guardado no contiene JSON válido');
         }
         
+        // VERIFICACIÓN FINAL ABSOLUTA
+        console.log('[11] Verificación final absoluta...');
+        if (!fs.existsSync(filePath)) {
+            console.error('[11] ❌ ERROR CRÍTICO: Archivo no existe en verificación final');
+            throw new Error('El archivo no existe después de todas las verificaciones');
+        }
+        
+        const finalStats = fs.statSync(filePath);
+        if (finalStats.size === 0) {
+            console.error('[11] ❌ ERROR CRÍTICO: Archivo está vacío');
+            throw new Error('El archivo está vacío');
+        }
+        
+        console.log('[11] ✅ Verificación final exitosa');
+        console.log('[11] ✅ Archivo existe y tiene contenido');
+        console.log('[11] ✅ Tamaño final:', finalStats.size, 'bytes');
+        
         console.log('\n========================================');
         console.log('=== ✅ ÉXITO: Archivo guardado ===');
         console.log('Filename:', fileName);
         console.log('File path:', filePath);
-        console.log('File size:', stats.size, 'bytes');
+        console.log('File size:', finalStats.size, 'bytes');
+        console.log('Storage path:', storagePath);
         console.log('========================================\n');
         
-        // Responder con éxito
+        // Responder con éxito - IMPORTANTE: no hacer return antes de esto
         res.json({
             success: true,
             message: 'Archivo guardado exitosamente',
             filename: fileName,
             filePath: filePath,
             storagePath: storagePath,
-            fileSize: stats.size,
-            ambiente: ambiente
+            fileSize: finalStats.size,
+            ambiente: ambiente,
+            verified: true
         });
 
     } catch (error) {
