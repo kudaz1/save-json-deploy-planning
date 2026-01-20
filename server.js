@@ -316,24 +316,75 @@ function ensureDirectoryExists(dirPath) {
 
 // Función para obtener la ruta de almacenamiento en EC2
 function getStoragePath() {
-    // Ruta solicitada: ~/Desktop/jsonControlm
-    // En Linux/EC2, esto se expande a /root/Desktop/jsonControlm para usuario root
-    // o /home/usuario/Desktop/jsonControlm para otros usuarios
-    const homeDir = os.homedir();
-    const desktopPath = path.join(homeDir, 'Desktop');
-    const storagePath = path.join(desktopPath, 'jsonControlm');
-    
-    // Asegurar que el directorio Desktop existe
-    if (!fs.existsSync(desktopPath)) {
-        fs.mkdirSync(desktopPath, { recursive: true, mode: 0o755 });
-        console.log(`Creado Desktop en home: ${desktopPath}`);
+    try {
+        // Ruta solicitada: ~/Desktop/jsonControlm
+        // En Linux/EC2, esto se expande a /root/Desktop/jsonControlm para usuario root
+        // o /home/usuario/Desktop/jsonControlm para otros usuarios
+        const homeDir = os.homedir();
+        console.log(`Home directory detectado: ${homeDir}`);
+        
+        const desktopPath = path.join(homeDir, 'Desktop');
+        const storagePath = path.join(desktopPath, 'jsonControlm');
+        
+        console.log(`Intentando crear Desktop en: ${desktopPath}`);
+        console.log(`Ruta de almacenamiento será: ${storagePath}`);
+        
+        // Asegurar que el directorio Desktop existe
+        if (!fs.existsSync(desktopPath)) {
+            try {
+                fs.mkdirSync(desktopPath, { recursive: true, mode: 0o755 });
+                console.log(`✅ Carpeta Desktop creada: ${desktopPath}`);
+            } catch (error) {
+                console.error(`❌ Error creando Desktop: ${error.message}`);
+                throw error;
+            }
+        } else {
+            console.log(`ℹ️ Carpeta Desktop ya existe: ${desktopPath}`);
+        }
+        
+        // Asegurar que el directorio jsonControlm existe
+        if (!fs.existsSync(storagePath)) {
+            try {
+                fs.mkdirSync(storagePath, { recursive: true, mode: 0o755 });
+                console.log(`✅ Carpeta jsonControlm creada: ${storagePath}`);
+            } catch (error) {
+                console.error(`❌ Error creando jsonControlm: ${error.message}`);
+                throw error;
+            }
+        } else {
+            console.log(`ℹ️ Carpeta jsonControlm ya existe: ${storagePath}`);
+        }
+        
+        // Verificar que la carpeta existe y es accesible
+        if (!fs.existsSync(storagePath)) {
+            throw new Error(`No se pudo crear o verificar la carpeta: ${storagePath}`);
+        }
+        
+        // Verificar permisos de escritura
+        try {
+            fs.accessSync(storagePath, fs.constants.W_OK);
+            console.log(`✅ Permisos de escritura verificados en: ${storagePath}`);
+        } catch (error) {
+            console.warn(`⚠️ Advertencia: No se pueden verificar permisos de escritura: ${error.message}`);
+        }
+        
+        console.log(`✅ Ruta de almacenamiento lista: ${storagePath}`);
+        return storagePath;
+        
+    } catch (error) {
+        console.error(`❌ Error crítico en getStoragePath: ${error.message}`);
+        console.error(`Stack trace: ${error.stack}`);
+        // Intentar fallback con ruta temporal
+        const fallbackPath = path.join(os.tmpdir(), 'jsonControlm');
+        console.log(`⚠️ Usando ruta de fallback: ${fallbackPath}`);
+        try {
+            fs.mkdirSync(fallbackPath, { recursive: true, mode: 0o755 });
+            return fallbackPath;
+        } catch (fallbackError) {
+            console.error(`❌ Error crítico: No se pudo crear ninguna carpeta de almacenamiento`);
+            throw new Error(`No se pudo crear carpeta de almacenamiento: ${error.message}`);
+        }
     }
-    
-    // Asegurar que el directorio jsonControlm existe
-    ensureDirectoryExists(storagePath);
-    
-    console.log(`Ruta de almacenamiento: ${storagePath}`);
-    return storagePath;
 }
 
 // Función para generar script automático de guardado
@@ -771,6 +822,61 @@ app.post('/generate-script', (req, res) => {
     }
 });
 
+// Endpoint para forzar creación de carpeta (útil para debugging)
+app.get('/create-storage', (req, res) => {
+    try {
+        console.log('=== FORZANDO CREACIÓN DE CARPETA DE ALMACENAMIENTO ===');
+        const storagePath = getStoragePath();
+        
+        // Verificar que existe
+        const exists = fs.existsSync(storagePath);
+        let canWrite = false;
+        try {
+            fs.accessSync(storagePath, fs.constants.W_OK);
+            canWrite = true;
+        } catch (error) {
+            console.error(`No se puede escribir en: ${storagePath}`, error.message);
+        }
+        
+        // Intentar crear un archivo de prueba
+        let testFileCreated = false;
+        let testFilePath = '';
+        try {
+            testFilePath = path.join(storagePath, 'test-write.txt');
+            fs.writeFileSync(testFilePath, 'test');
+            testFileCreated = true;
+            fs.unlinkSync(testFilePath); // Eliminar archivo de prueba
+        } catch (error) {
+            console.error(`Error creando archivo de prueba: ${error.message}`);
+        }
+        
+        res.json({
+            success: exists && canWrite,
+            message: exists && canWrite 
+                ? 'Carpeta de almacenamiento creada y verificada exitosamente' 
+                : 'Error creando o verificando carpeta de almacenamiento',
+            storagePath: storagePath,
+            exists: exists,
+            canWrite: canWrite,
+            testFileCreated: testFileCreated,
+            homeDir: os.homedir(),
+            currentUser: getCurrentUser(),
+            permissions: {
+                desktop: fs.existsSync(path.join(os.homedir(), 'Desktop')),
+                storage: exists
+            }
+        });
+    } catch (error) {
+        console.error('Error en create-storage:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error creando carpeta de almacenamiento',
+            message: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
+    }
+});
+
 // Endpoint de diagnóstico
 app.get('/diagnostic', (req, res) => {
     try {
@@ -859,7 +965,8 @@ app.get('/', (req, res) => {
         endpoints: {
             'GET /': 'Información de la API',
             'GET /diagnostic': 'Información de diagnóstico del sistema EC2',
-            'POST /save-json': 'Guarda archivo JSON en EC2 (/Desktop/jsonControlm)',
+            'GET /create-storage': 'Fuerza creación de carpeta de almacenamiento (debugging)',
+            'POST /save-json': 'Guarda archivo JSON en EC2 (~/Desktop/jsonControlm)',
             'POST /execute-controlm': 'Ejecuta Control-M usando archivo guardado en EC2',
             'POST /save-and-execute': 'Guarda archivo y ejecuta Control-M en un solo paso',
             'POST /download-json': 'Descarga archivo JSON',
