@@ -13,59 +13,68 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 
-// Middleware para capturar raw body SOLO para /save-json
-app.use('/save-json', express.raw({ type: '*/*', limit: '50mb' }), (req, res, next) => {
-    try {
-        let bodyString = req.body.toString('utf8');
-        console.log('[RAW-BODY] Longitud:', bodyString.length);
-        console.log('[RAW-BODY] Primeros 300 chars:', bodyString.substring(0, 300));
-        
-        // Buscar el patrón problemático de comillas escapadas
-        // El problema es: '\'' que en el JSON se ve como: "PARM('\''CTINTDEM'\'' '\''NEXDEM'\'')"
-        // Esto debería ser: "PARM('CTINTDEM' 'NEXDEM')"
-        
-        // Limpiar el JSON: reemplazar '\'' con '
-        let cleanedBody = bodyString;
-        
-        // Patrón 1: '\'' dentro de strings JSON
-        cleanedBody = cleanedBody.replace(/\\'\\'\\'/g, "'");
-        cleanedBody = cleanedBody.replace(/\\'\\'/g, "'");
-        
-        // Patrón 2: Si hay comillas simples escapadas de otra forma
-        cleanedBody = cleanedBody.replace(/\\'/g, "'");
-        
-        console.log('[RAW-BODY] Body limpiado, intentando parsear...');
-        
-        // Intentar parsear
+// Middleware para capturar y limpiar body SOLO para /save-json
+app.use('/save-json', (req, res, next) => {
+    let data = '';
+    
+    req.on('data', chunk => {
+        data += chunk.toString('utf8');
+    });
+    
+    req.on('end', () => {
         try {
-            req.body = JSON.parse(cleanedBody);
-            console.log('[RAW-BODY] ✅ JSON parseado exitosamente');
-            console.log('[RAW-BODY] Keys:', Object.keys(req.body));
-            next();
-        } catch (parseError) {
-            console.error('[RAW-BODY] ❌ Error parseando:', parseError.message);
-            console.error('[RAW-BODY] Posición:', parseError.message.match(/position (\d+)/)?.[1]);
+            console.log('[RAW-BODY] ========================================');
+            console.log('[RAW-BODY] Body recibido, longitud:', data.length);
+            console.log('[RAW-BODY] Primeros 500 chars:', data.substring(0, 500));
             
-            // Guardar para debugging
-            const debugFile = path.join(os.tmpdir(), 'debug-json-' + Date.now() + '.txt');
-            fs.writeFileSync(debugFile, cleanedBody);
-            console.error('[RAW-BODY] Body guardado en:', debugFile);
+            // Limpiar el JSON: el problema es '\'' que debe ser '
+            let cleanedBody = data;
             
-            return res.status(400).json({
+            // Reemplazar comillas simples escapadas problemáticas
+            // Patrón: '\'' dentro de strings JSON
+            cleanedBody = cleanedBody.replace(/\\'\\'\\'/g, "'");
+            cleanedBody = cleanedBody.replace(/\\'\\'/g, "'");
+            cleanedBody = cleanedBody.replace(/\\'/g, "'");
+            
+            console.log('[RAW-BODY] Body limpiado, longitud:', cleanedBody.length);
+            console.log('[RAW-BODY] Intentando parsear...');
+            
+            // Parsear JSON
+            try {
+                req.body = JSON.parse(cleanedBody);
+                console.log('[RAW-BODY] ✅ JSON parseado exitosamente');
+                console.log('[RAW-BODY] Keys:', Object.keys(req.body));
+                next();
+            } catch (parseError) {
+                console.error('[RAW-BODY] ❌ ERROR parseando:', parseError.message);
+                const pos = parseError.message.match(/position (\d+)/)?.[1];
+                if (pos) {
+                    const start = Math.max(0, parseInt(pos) - 100);
+                    const end = Math.min(cleanedBody.length, parseInt(pos) + 100);
+                    console.error('[RAW-BODY] Contexto:', cleanedBody.substring(start, end));
+                }
+                
+                // Guardar para debug
+                const debugFile = path.join(os.tmpdir(), 'debug-' + Date.now() + '.txt');
+                fs.writeFileSync(debugFile, cleanedBody);
+                console.error('[RAW-BODY] Guardado en:', debugFile);
+                
+                return res.status(400).json({
+                    success: false,
+                    error: 'Error parseando JSON',
+                    details: parseError.message,
+                    debugFile: debugFile
+                });
+            }
+        } catch (error) {
+            console.error('[RAW-BODY] ERROR:', error.message);
+            return res.status(500).json({
                 success: false,
-                error: 'Error al parsear JSON',
-                details: parseError.message,
-                debugFile: debugFile
+                error: 'Error procesando body',
+                details: error.message
             });
         }
-    } catch (error) {
-        console.error('[RAW-BODY] ERROR:', error.message);
-        return res.status(500).json({
-            success: false,
-            error: 'Error procesando body',
-            details: error.message
-        });
-    }
+    });
 });
 
 // Middleware normal para otros endpoints
