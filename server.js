@@ -316,73 +316,105 @@ function ensureDirectoryExists(dirPath) {
 
 // Función para obtener la ruta de almacenamiento en EC2
 function getStoragePath() {
+    console.log('=== INICIANDO getStoragePath() ===');
+    
     try {
         // Ruta solicitada: ~/Desktop/jsonControlm
         // En Linux/EC2, esto se expande a /root/Desktop/jsonControlm para usuario root
         // o /home/usuario/Desktop/jsonControlm para otros usuarios
         const homeDir = os.homedir();
-        console.log(`Home directory detectado: ${homeDir}`);
+        console.log(`[1] Home directory detectado: ${homeDir}`);
+        
+        if (!homeDir) {
+            throw new Error('No se pudo detectar el directorio home');
+        }
         
         const desktopPath = path.join(homeDir, 'Desktop');
         const storagePath = path.join(desktopPath, 'jsonControlm');
         
-        console.log(`Intentando crear Desktop en: ${desktopPath}`);
-        console.log(`Ruta de almacenamiento será: ${storagePath}`);
+        console.log(`[2] Desktop path: ${desktopPath}`);
+        console.log(`[3] Storage path: ${storagePath}`);
         
-        // Asegurar que el directorio Desktop existe
+        // FORZAR creación de Desktop - usar mkdirSync con recursive siempre
+        console.log(`[4] Creando Desktop (forzado)...`);
+        try {
+            fs.mkdirSync(desktopPath, { recursive: true, mode: 0o755 });
+            console.log(`✅ Desktop creado/verificado: ${desktopPath}`);
+        } catch (error) {
+            console.error(`❌ ERROR creando Desktop: ${error.message}`);
+            console.error(`   Code: ${error.code}`);
+            console.error(`   Errno: ${error.errno}`);
+            throw error;
+        }
+        
+        // Verificar que Desktop existe
         if (!fs.existsSync(desktopPath)) {
-            try {
-                fs.mkdirSync(desktopPath, { recursive: true, mode: 0o755 });
-                console.log(`✅ Carpeta Desktop creada: ${desktopPath}`);
-            } catch (error) {
-                console.error(`❌ Error creando Desktop: ${error.message}`);
-                throw error;
-            }
-        } else {
-            console.log(`ℹ️ Carpeta Desktop ya existe: ${desktopPath}`);
+            throw new Error(`Desktop no existe después de crearlo: ${desktopPath}`);
+        }
+        console.log(`[5] Desktop verificado que existe`);
+        
+        // FORZAR creación de jsonControlm - usar mkdirSync con recursive siempre
+        console.log(`[6] Creando jsonControlm (forzado)...`);
+        try {
+            fs.mkdirSync(storagePath, { recursive: true, mode: 0o755 });
+            console.log(`✅ jsonControlm creado/verificado: ${storagePath}`);
+        } catch (error) {
+            console.error(`❌ ERROR creando jsonControlm: ${error.message}`);
+            console.error(`   Code: ${error.code}`);
+            console.error(`   Errno: ${error.errno}`);
+            throw error;
         }
         
-        // Asegurar que el directorio jsonControlm existe
+        // Verificar que jsonControlm existe
         if (!fs.existsSync(storagePath)) {
-            try {
-                fs.mkdirSync(storagePath, { recursive: true, mode: 0o755 });
-                console.log(`✅ Carpeta jsonControlm creada: ${storagePath}`);
-            } catch (error) {
-                console.error(`❌ Error creando jsonControlm: ${error.message}`);
-                throw error;
-            }
-        } else {
-            console.log(`ℹ️ Carpeta jsonControlm ya existe: ${storagePath}`);
+            throw new Error(`jsonControlm no existe después de crearlo: ${storagePath}`);
         }
-        
-        // Verificar que la carpeta existe y es accesible
-        if (!fs.existsSync(storagePath)) {
-            throw new Error(`No se pudo crear o verificar la carpeta: ${storagePath}`);
-        }
+        console.log(`[7] jsonControlm verificado que existe`);
         
         // Verificar permisos de escritura
+        console.log(`[8] Verificando permisos de escritura...`);
         try {
             fs.accessSync(storagePath, fs.constants.W_OK);
-            console.log(`✅ Permisos de escritura verificados en: ${storagePath}`);
+            console.log(`✅ Permisos de escritura OK`);
         } catch (error) {
-            console.warn(`⚠️ Advertencia: No se pueden verificar permisos de escritura: ${error.message}`);
+            console.error(`❌ ERROR: Sin permisos de escritura: ${error.message}`);
+            // No lanzar error, solo advertir
         }
         
-        console.log(`✅ Ruta de almacenamiento lista: ${storagePath}`);
+        // Intentar escribir un archivo de prueba
+        console.log(`[9] Probando escritura de archivo...`);
+        const testFile = path.join(storagePath, '.test-write');
+        try {
+            fs.writeFileSync(testFile, 'test');
+            fs.unlinkSync(testFile);
+            console.log(`✅ Escritura de archivo OK`);
+        } catch (error) {
+            console.error(`❌ ERROR: No se puede escribir archivo: ${error.message}`);
+            // No lanzar error, solo advertir
+        }
+        
+        console.log(`[10] ✅ Ruta de almacenamiento lista: ${storagePath}`);
+        console.log(`=== FIN getStoragePath() ===`);
         return storagePath;
         
     } catch (error) {
-        console.error(`❌ Error crítico en getStoragePath: ${error.message}`);
-        console.error(`Stack trace: ${error.stack}`);
+        console.error(`=== ERROR CRÍTICO en getStoragePath() ===`);
+        console.error(`Mensaje: ${error.message}`);
+        console.error(`Code: ${error.code || 'N/A'}`);
+        console.error(`Errno: ${error.errno || 'N/A'}`);
+        console.error(`Stack: ${error.stack}`);
+        
         // Intentar fallback con ruta temporal
         const fallbackPath = path.join(os.tmpdir(), 'jsonControlm');
-        console.log(`⚠️ Usando ruta de fallback: ${fallbackPath}`);
+        console.log(`⚠️ Intentando fallback en: ${fallbackPath}`);
         try {
             fs.mkdirSync(fallbackPath, { recursive: true, mode: 0o755 });
+            console.log(`✅ Fallback creado: ${fallbackPath}`);
             return fallbackPath;
         } catch (fallbackError) {
-            console.error(`❌ Error crítico: No se pudo crear ninguna carpeta de almacenamiento`);
-            throw new Error(`No se pudo crear carpeta de almacenamiento: ${error.message}`);
+            console.error(`❌ ERROR CRÍTICO: Fallback también falló`);
+            console.error(`   Mensaje: ${fallbackError.message}`);
+            throw new Error(`No se pudo crear carpeta de almacenamiento. Original: ${error.message}, Fallback: ${fallbackError.message}`);
         }
     }
 }
@@ -1008,18 +1040,47 @@ app.get('/', (req, res) => {
 
 // Iniciar servidor
 app.listen(PORT, () => {
-    const currentUser = getCurrentUser();
-    const storagePath = getStoragePath();
+    console.log(`========================================`);
+    console.log(`🚀 Iniciando servidor en puerto ${PORT}...`);
+    console.log(`========================================`);
     
-    console.log(`========================================`);
-    console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
-    console.log(`👤 Usuario: ${currentUser}`);
-    console.log(`📁 Ruta de almacenamiento: ${storagePath}`);
-    console.log(`========================================`);
-    console.log(`📋 Endpoints disponibles:`);
-    console.log(`   POST /save-json - Guarda JSON en EC2`);
-    console.log(`   POST /execute-controlm - Ejecuta Control-M con archivo guardado`);
-    console.log(`   POST /save-and-execute - Guarda y ejecuta en un paso`);
-    console.log(`   GET /diagnostic - Información del sistema`);
-    console.log(`========================================`);
+    try {
+        const currentUser = getCurrentUser();
+        console.log(`👤 Usuario detectado: ${currentUser}`);
+        
+        console.log(`📁 Intentando inicializar ruta de almacenamiento...`);
+        const storagePath = getStoragePath();
+        
+        // Verificar una vez más que existe
+        if (fs.existsSync(storagePath)) {
+            console.log(`✅ VERIFICACIÓN FINAL: Carpeta existe: ${storagePath}`);
+        } else {
+            console.error(`❌ VERIFICACIÓN FINAL FALLIDA: Carpeta NO existe: ${storagePath}`);
+            console.error(`   Esto es un problema crítico. Revisa los logs anteriores.`);
+        }
+        
+        console.log(`========================================`);
+        console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+        console.log(`👤 Usuario: ${currentUser}`);
+        console.log(`📁 Ruta de almacenamiento: ${storagePath}`);
+        console.log(`📁 Ruta existe: ${fs.existsSync(storagePath) ? 'SÍ' : 'NO'}`);
+        console.log(`========================================`);
+        console.log(`📋 Endpoints disponibles:`);
+        console.log(`   GET / - Información de la API`);
+        console.log(`   GET /diagnostic - Información de diagnóstico`);
+        console.log(`   GET /create-storage - Forzar creación de carpeta`);
+        console.log(`   POST /save-json - Guarda JSON en EC2`);
+        console.log(`   POST /execute-controlm - Ejecuta Control-M con archivo guardado`);
+        console.log(`   POST /save-and-execute - Guarda y ejecuta en un paso`);
+        console.log(`========================================`);
+    } catch (error) {
+        console.error(`========================================`);
+        console.error(`❌ ERROR CRÍTICO al inicializar servidor:`);
+        console.error(`   ${error.message}`);
+        console.error(`   Stack: ${error.stack}`);
+        console.error(`========================================`);
+        console.error(`El servidor continuará pero puede no funcionar correctamente.`);
+        console.error(`Revisa los logs y ejecuta GET /create-storage para más información.`);
+        console.error(`========================================`);
+    }
 });
