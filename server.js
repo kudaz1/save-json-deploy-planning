@@ -340,109 +340,30 @@ function sanitizeFilename(filename) {
     return sanitized;
 }
 
-// Función para obtener la ruta de almacenamiento en EC2
+// Función para obtener la ruta de almacenamiento en EC2 - VERSIÓN SIMPLIFICADA Y ROBUSTA
 function getStoragePath() {
-    console.log('=== INICIANDO getStoragePath() ===');
+    const homeDir = os.homedir();
+    if (!homeDir) {
+        throw new Error('No se pudo detectar el directorio home');
+    }
+    
+    const desktopPath = path.join(homeDir, 'Desktop');
+    const storagePath = path.join(desktopPath, 'jsonControlm');
+    
+    // Crear carpetas de forma forzada - SIEMPRE
+    try {
+        fs.mkdirSync(desktopPath, { recursive: true, mode: 0o755 });
+    } catch (e) {
+        // Ignorar si ya existe
+    }
     
     try {
-        // Ruta solicitada: ~/Desktop/jsonControlm
-        // En Linux/EC2, esto se expande a /root/Desktop/jsonControlm para usuario root
-        // o /home/usuario/Desktop/jsonControlm para otros usuarios
-        const homeDir = os.homedir();
-        console.log(`[1] Home directory detectado: ${homeDir}`);
-        
-        if (!homeDir) {
-            throw new Error('No se pudo detectar el directorio home');
-        }
-        
-        const desktopPath = path.join(homeDir, 'Desktop');
-        const storagePath = path.join(desktopPath, 'jsonControlm');
-        
-        console.log(`[2] Desktop path: ${desktopPath}`);
-        console.log(`[3] Storage path: ${storagePath}`);
-        
-        // FORZAR creación de Desktop - usar mkdirSync con recursive siempre
-        console.log(`[4] Creando Desktop (forzado)...`);
-        try {
-            fs.mkdirSync(desktopPath, { recursive: true, mode: 0o755 });
-            console.log(`✅ Desktop creado/verificado: ${desktopPath}`);
-        } catch (error) {
-            console.error(`❌ ERROR creando Desktop: ${error.message}`);
-            console.error(`   Code: ${error.code}`);
-            console.error(`   Errno: ${error.errno}`);
-            throw error;
-        }
-        
-        // Verificar que Desktop existe
-        if (!fs.existsSync(desktopPath)) {
-            throw new Error(`Desktop no existe después de crearlo: ${desktopPath}`);
-        }
-        console.log(`[5] Desktop verificado que existe`);
-        
-        // FORZAR creación de jsonControlm - usar mkdirSync con recursive siempre
-        console.log(`[6] Creando jsonControlm (forzado)...`);
-        try {
-            fs.mkdirSync(storagePath, { recursive: true, mode: 0o755 });
-            console.log(`✅ jsonControlm creado/verificado: ${storagePath}`);
-        } catch (error) {
-            console.error(`❌ ERROR creando jsonControlm: ${error.message}`);
-            console.error(`   Code: ${error.code}`);
-            console.error(`   Errno: ${error.errno}`);
-            throw error;
-        }
-        
-        // Verificar que jsonControlm existe
-        if (!fs.existsSync(storagePath)) {
-            throw new Error(`jsonControlm no existe después de crearlo: ${storagePath}`);
-        }
-        console.log(`[7] jsonControlm verificado que existe`);
-        
-        // Verificar permisos de escritura
-        console.log(`[8] Verificando permisos de escritura...`);
-        try {
-            fs.accessSync(storagePath, fs.constants.W_OK);
-            console.log(`✅ Permisos de escritura OK`);
-        } catch (error) {
-            console.error(`❌ ERROR: Sin permisos de escritura: ${error.message}`);
-            // No lanzar error, solo advertir
-        }
-        
-        // Intentar escribir un archivo de prueba
-        console.log(`[9] Probando escritura de archivo...`);
-        const testFile = path.join(storagePath, '.test-write');
-        try {
-            fs.writeFileSync(testFile, 'test');
-            fs.unlinkSync(testFile);
-            console.log(`✅ Escritura de archivo OK`);
-        } catch (error) {
-            console.error(`❌ ERROR: No se puede escribir archivo: ${error.message}`);
-            // No lanzar error, solo advertir
-        }
-        
-        console.log(`[10] ✅ Ruta de almacenamiento lista: ${storagePath}`);
-        console.log(`=== FIN getStoragePath() ===`);
-        return storagePath;
-        
-    } catch (error) {
-        console.error(`=== ERROR CRÍTICO en getStoragePath() ===`);
-        console.error(`Mensaje: ${error.message}`);
-        console.error(`Code: ${error.code || 'N/A'}`);
-        console.error(`Errno: ${error.errno || 'N/A'}`);
-        console.error(`Stack: ${error.stack}`);
-        
-        // Intentar fallback con ruta temporal
-        const fallbackPath = path.join(os.tmpdir(), 'jsonControlm');
-        console.log(`⚠️ Intentando fallback en: ${fallbackPath}`);
-        try {
-            fs.mkdirSync(fallbackPath, { recursive: true, mode: 0o755 });
-            console.log(`✅ Fallback creado: ${fallbackPath}`);
-            return fallbackPath;
-        } catch (fallbackError) {
-            console.error(`❌ ERROR CRÍTICO: Fallback también falló`);
-            console.error(`   Mensaje: ${fallbackError.message}`);
-            throw new Error(`No se pudo crear carpeta de almacenamiento. Original: ${error.message}, Fallback: ${fallbackError.message}`);
-        }
+        fs.mkdirSync(storagePath, { recursive: true, mode: 0o755 });
+    } catch (e) {
+        // Ignorar si ya existe
     }
+    
+    return storagePath;
 }
 
 // Función para generar script automático de guardado
@@ -645,117 +566,61 @@ app.post('/save-json', async (req, res) => {
         const filePath = path.join(storagePath, fileName);
         console.log(`Ruta completa del archivo: ${filePath}`);
         
-        // Verificar que la carpeta existe y tiene permisos
-        if (!fs.existsSync(storagePath)) {
-            console.error(`❌ ERROR: La carpeta de almacenamiento no existe: ${storagePath}`);
-            console.error(`   Intentando crear la carpeta nuevamente...`);
-            try {
-                fs.mkdirSync(storagePath, { recursive: true, mode: 0o755 });
-                console.log(`✅ Carpeta creada nuevamente: ${storagePath}`);
-            } catch (mkdirError) {
-                console.error(`❌ ERROR al crear carpeta: ${mkdirError.message}`);
-                return res.status(500).json({
-                    success: false,
-                    error: 'No se pudo crear la carpeta de almacenamiento',
-                    storagePath: storagePath,
-                    details: mkdirError.message
-                });
-            }
+        // GUARDAR EL ARCHIVO - VERSIÓN SIMPLE Y DIRECTA
+        console.log(`[GUARDAR] Preparando para guardar archivo...`);
+        console.log(`[GUARDAR] Ruta completa: ${filePath}`);
+        
+        // Asegurar que la carpeta existe (por si acaso)
+        try {
+            fs.mkdirSync(storagePath, { recursive: true, mode: 0o755 });
+        } catch (e) {
+            // Ignorar si ya existe
         }
         
-        // Verificar permisos de escritura
-        try {
-            fs.accessSync(storagePath, fs.constants.W_OK);
-            console.log(`✅ Permisos de escritura verificados en: ${storagePath}`);
-        } catch (accessError) {
-            console.error(`❌ ERROR: Sin permisos de escritura en: ${storagePath}`);
-            return res.status(500).json({
-                success: false,
-                error: 'Sin permisos de escritura en la carpeta de almacenamiento',
-                storagePath: storagePath
-            });
-        }
+        // Convertir JSON a string
+        const jsonContent = JSON.stringify(parsedJson, null, 2);
+        console.log(`[GUARDAR] Contenido preparado: ${jsonContent.length} caracteres`);
         
-        // Guardar el archivo JSON en EC2
-        let fileSaved = false;
-        let fileSize = 0;
+        // ESCRIBIR EL ARCHIVO - FORMA DIRECTA
         try {
-            const jsonContent = JSON.stringify(parsedJson, null, 2);
-            console.log(`[DEBUG] Contenido JSON a guardar (primeros 100 chars): ${jsonContent.substring(0, 100)}...`);
-            console.log(`[DEBUG] Tamaño del contenido: ${jsonContent.length} caracteres`);
-            
-            // Escribir el archivo
-            fs.writeFileSync(filePath, jsonContent, 'utf8');
-            console.log(`✅ Archivo escrito en: ${filePath}`);
-            
-            // Esperar un momento para asegurar que el sistema de archivos lo procese
-            await new Promise(resolve => setTimeout(resolve, 100));
-            
-            // Verificar que el archivo existe
-            if (!fs.existsSync(filePath)) {
-                throw new Error(`El archivo no existe después de escribirlo: ${filePath}`);
-            }
-            
-            // Obtener estadísticas del archivo
-            const stats = fs.statSync(filePath);
-            fileSize = stats.size;
-            fileSaved = true;
-            
-            console.log(`✅ Archivo verificado exitosamente:`);
-            console.log(`   - Ruta: ${filePath}`);
-            console.log(`   - Tamaño: ${fileSize} bytes`);
-            console.log(`   - Creado: ${stats.birthtime}`);
-            console.log(`   - Modificado: ${stats.mtime}`);
-            
-            // Intentar leer el archivo para verificar que se guardó correctamente
-            try {
-                const readContent = fs.readFileSync(filePath, 'utf8');
-                if (readContent.length === 0) {
-                    throw new Error('El archivo está vacío después de guardarlo');
-                }
-                console.log(`✅ Archivo leído correctamente - ${readContent.length} caracteres`);
-            } catch (readError) {
-                console.error(`❌ ERROR al leer archivo guardado: ${readError.message}`);
-                throw readError;
-            }
-            
+            fs.writeFileSync(filePath, jsonContent, { encoding: 'utf8', mode: 0o644 });
+            console.log(`[GUARDAR] ✅ Archivo escrito exitosamente`);
         } catch (writeError) {
-            console.error(`❌ ERROR CRÍTICO al escribir archivo:`);
-            console.error(`   Mensaje: ${writeError.message}`);
-            console.error(`   Code: ${writeError.code || 'N/A'}`);
-            console.error(`   Ruta intentada: ${filePath}`);
-            console.error(`   Carpeta existe: ${fs.existsSync(storagePath)}`);
-            console.error(`   Permisos de escritura: ${fs.constants.W_OK ? 'OK' : 'NO'}`);
-            
+            console.error(`[GUARDAR] ❌ ERROR al escribir: ${writeError.message}`);
+            console.error(`[GUARDAR] Code: ${writeError.code}`);
+            console.error(`[GUARDAR] Ruta: ${filePath}`);
             return res.status(500).json({
                 success: false,
-                error: 'Error al guardar el archivo',
+                error: 'Error al escribir el archivo',
                 details: writeError.message,
                 filePath: filePath,
-                storagePath: storagePath,
-                storageExists: fs.existsSync(storagePath)
+                code: writeError.code
             });
         }
         
-        // Verificación final antes de responder
-        if (!fileSaved || !fs.existsSync(filePath)) {
+        // VERIFICAR QUE EL ARCHIVO EXISTE
+        if (!fs.existsSync(filePath)) {
+            console.error(`[GUARDAR] ❌ El archivo no existe después de escribirlo`);
             return res.status(500).json({
                 success: false,
-                error: 'El archivo no se guardó correctamente',
+                error: 'El archivo no se creó correctamente',
                 filePath: filePath
             });
         }
         
+        // Obtener información del archivo
+        const stats = fs.statSync(filePath);
+        console.log(`[GUARDAR] ✅ Archivo verificado - Tamaño: ${stats.size} bytes`);
+        
         // Responder con éxito
         res.json({
             success: true,
-            message: `Archivo guardado exitosamente en EC2`,
+            message: 'Archivo guardado exitosamente',
             filename: fileName,
             filePath: filePath,
             storagePath: storagePath,
-            fileSize: fileSize,
-            ambiente: ambiente,
-            verified: true
+            fileSize: stats.size,
+            ambiente: ambiente
         });
 
     } catch (error) {
@@ -1000,40 +865,35 @@ app.post('/generate-script', (req, res) => {
     }
 });
 
-// Endpoint de prueba para guardar un archivo de ejemplo
+// Endpoint de prueba para guardar un archivo de ejemplo - VERSIÓN SIMPLIFICADA
 app.get('/test-save', async (req, res) => {
     try {
-        console.log('=== TEST: Guardando archivo de prueba ===');
+        console.log('[TEST-SAVE] Iniciando prueba de guardado...');
         
         const testData = {
             test: true,
             timestamp: new Date().toISOString(),
             message: 'Este es un archivo de prueba',
-            data: {
-                ambiente: 'TEST',
-                filename: 'test-file',
-                jsonData: { ejemplo: 'datos de prueba' }
-            }
+            data: { ejemplo: 'datos de prueba' }
         };
         
         const fileName = 'test-file.json';
         const storagePath = getStoragePath();
         const filePath = path.join(storagePath, fileName);
         
-        console.log(`Guardando archivo de prueba en: ${filePath}`);
+        console.log(`[TEST-SAVE] Ruta: ${filePath}`);
         
-        // Guardar el archivo
-        fs.writeFileSync(filePath, JSON.stringify(testData, null, 2), 'utf8');
+        // Guardar el archivo de forma directa
+        fs.writeFileSync(filePath, JSON.stringify(testData, null, 2), { encoding: 'utf8', mode: 0o644 });
+        console.log(`[TEST-SAVE] ✅ Archivo escrito`);
         
-        // Verificar que se guardó
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
+        // Verificar
         if (!fs.existsSync(filePath)) {
             throw new Error('El archivo no existe después de guardarlo');
         }
         
         const stats = fs.statSync(filePath);
-        const readContent = fs.readFileSync(filePath, 'utf8');
+        console.log(`[TEST-SAVE] ✅ Archivo verificado - Tamaño: ${stats.size} bytes`);
         
         res.json({
             success: true,
@@ -1041,22 +901,17 @@ app.get('/test-save', async (req, res) => {
             filePath: filePath,
             storagePath: storagePath,
             fileSize: stats.size,
-            fileExists: fs.existsSync(filePath),
-            contentLength: readContent.length,
-            instructions: [
-                '1. Verifica el archivo con: ls -la ' + filePath,
-                '2. Lee el archivo con: cat ' + filePath,
-                '3. Si funciona, prueba el endpoint POST /save-json'
-            ]
+            fileExists: true,
+            instructions: `Ejecuta: ls -la ${filePath}`
         });
         
     } catch (error) {
-        console.error('Error en test-save:', error);
+        console.error('[TEST-SAVE] ❌ ERROR:', error.message);
         res.status(500).json({
             success: false,
             error: 'Error guardando archivo de prueba',
             message: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            filePath: error.filePath || 'N/A'
         });
     }
 });
