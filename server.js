@@ -314,6 +314,44 @@ function ensureDirectoryExists(dirPath) {
     }
 }
 
+// Función para obtener la ruta de almacenamiento en EC2
+function getStoragePath() {
+    // Ruta solicitada: /Desktop/jsonControlm
+    // En Linux/EC2, intentamos crear /Desktop si no existe, o usar home/Desktop
+    const rootDesktop = '/Desktop';
+    const homeDir = os.homedir();
+    const homeDesktop = path.join(homeDir, 'Desktop');
+    
+    let storagePath;
+    
+    // Intentar usar /Desktop directamente (ruta solicitada)
+    if (fs.existsSync(rootDesktop)) {
+        storagePath = path.join(rootDesktop, 'jsonControlm');
+        console.log(`Usando ruta raíz: ${storagePath}`);
+    } else {
+        // Intentar crear /Desktop (puede requerir permisos sudo)
+        try {
+            if (!fs.existsSync(rootDesktop)) {
+                fs.mkdirSync(rootDesktop, { recursive: true, mode: 0o755 });
+                console.log(`Creado /Desktop en raíz`);
+            }
+            storagePath = path.join(rootDesktop, 'jsonControlm');
+            console.log(`Usando ruta raíz creada: ${storagePath}`);
+        } catch (error) {
+            // Si no se puede crear /Desktop, usar home/Desktop
+            console.log(`No se pudo crear /Desktop, usando home/Desktop: ${error.message}`);
+            storagePath = path.join(homeDesktop, 'jsonControlm');
+            console.log(`Usando ruta home: ${storagePath}`);
+        }
+    }
+    
+    // Asegurar que el directorio jsonControlm existe
+    ensureDirectoryExists(storagePath);
+    
+    console.log(`Ruta de almacenamiento final: ${storagePath}`);
+    return storagePath;
+}
+
 // Función para generar script automático de guardado
 function generateAutoSaveScript(jsonData, filename, ambiente, token) {
     const script = `
@@ -398,7 +436,8 @@ guardarArchivoAutomaticamente();
 }
 
 // Función para ejecutar la API según el ambiente
-async function executeControlMApi(ambiente, token, jsonData, filename) {
+// Ahora lee el archivo desde la ruta de almacenamiento en EC2
+async function executeControlMApi(ambiente, token, filename) {
     try {
         // Determinar la URL según el ambiente
         const apiUrl = ambiente === 'DEV' 
@@ -407,14 +446,27 @@ async function executeControlMApi(ambiente, token, jsonData, filename) {
 
         console.log(`Ejecutando API para ambiente ${ambiente}: ${apiUrl}`);
 
-        // Convertir JSON a string y crear buffer
-        const jsonString = JSON.stringify(jsonData, null, 2);
-        const jsonBuffer = Buffer.from(jsonString, 'utf8');
-
-        // Crear form-data con el buffer directamente
+        // Obtener la ruta de almacenamiento
+        const storagePath = getStoragePath();
+        
+        // Asegurar que el nombre del archivo tenga extensión .json
+        const fileName = filename.endsWith('.json') ? filename : `${filename}.json`;
+        const filePath = path.join(storagePath, fileName);
+        
+        // Verificar que el archivo existe
+        if (!fs.existsSync(filePath)) {
+            throw new Error(`El archivo no existe en la ruta: ${filePath}`);
+        }
+        
+        console.log(`Leyendo archivo desde: ${filePath}`);
+        
+        // Leer el archivo desde el sistema de archivos
+        const fileStream = fs.createReadStream(filePath);
+        
+        // Crear form-data con el stream del archivo
         const form = new FormData();
-        form.append('definitionsFile', jsonBuffer, {
-            filename: `${filename}.json`,
+        form.append('definitionsFile', fileStream, {
+            filename: fileName,
             contentType: 'application/json'
         });
 
@@ -431,11 +483,13 @@ async function executeControlMApi(ambiente, token, jsonData, filename) {
         const response = await axios.post(apiUrl, form, config);
         
         console.log(`API ejecutada exitosamente para ambiente ${ambiente}. Status: ${response.status}`);
+        console.log(`Archivo cargado desde: ${filePath}`);
         
         return {
             success: true,
             status: response.status,
             data: response.data,
+            filePath: filePath,
             message: `API ejecutada exitosamente para ambiente ${ambiente}`
         };
 
@@ -451,7 +505,7 @@ async function executeControlMApi(ambiente, token, jsonData, filename) {
     }
 }
 
-// Endpoint para guardar archivo JSON - devuelve archivo para descarga
+// Endpoint para guardar archivo JSON en EC2
 app.post('/save-json', async (req, res) => {
     try {
         const { ambiente, token, filename, jsonData } = req.body;
@@ -486,39 +540,26 @@ app.post('/save-json', async (req, res) => {
         // Asegurar que el nombre del archivo tenga extensión .json
         const fileName = filename.endsWith('.json') ? filename : `${filename}.json`;
         
-        // Obtener usuario de Windows y ruta del Escritorio
-        const currentUser = getCurrentUser();
-        console.log(`Usuario detectado: ${currentUser}`);
+        // Obtener ruta de almacenamiento en EC2
+        const storagePath = getStoragePath();
         
-        // Obtener ruta del Escritorio
-        const desktopPath = getDesktopPath();
-        const controlMPath = path.join(desktopPath, 'controlm');
-        
-        console.log(`Escritorio: ${desktopPath}`);
-        console.log(`Carpeta controlm: ${controlMPath}`);
-        
-        // Crear carpeta controlm si no existe
-        if (!fs.existsSync(controlMPath)) {
-            fs.mkdirSync(controlMPath, { recursive: true });
-            console.log(`✅ Carpeta creada: ${controlMPath}`);
-        }
+        console.log(`Guardando archivo en EC2: ${storagePath}`);
         
         // Ruta completa del archivo
-        const filePath = path.join(controlMPath, fileName);
+        const filePath = path.join(storagePath, fileName);
         
-        // Guardar el archivo JSON
+        // Guardar el archivo JSON en EC2
         fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2));
-        console.log(`✅ Archivo guardado: ${filePath}`);
+        console.log(`✅ Archivo guardado en EC2: ${filePath}`);
         
         // Responder con éxito
         res.json({
             success: true,
-            message: `Archivo guardado exitosamente en tu Escritorio`,
+            message: `Archivo guardado exitosamente en EC2`,
             filename: fileName,
             filePath: filePath,
-            desktopPath: desktopPath,
-            controlMPath: controlMPath,
-            currentUser: currentUser
+            storagePath: storagePath,
+            ambiente: ambiente
         });
 
     } catch (error) {
@@ -587,6 +628,126 @@ app.post('/download-json', async (req, res) => {
     }
 });
 
+// Endpoint para ejecutar Control-M usando archivo guardado en EC2
+app.post('/execute-controlm', async (req, res) => {
+    try {
+        const { ambiente, token, filename } = req.body;
+        
+        // Validar que se proporcionen los datos requeridos
+        if (!ambiente || !token || !filename) {
+            return res.status(400).json({
+                success: false,
+                error: 'Se requieren los campos "ambiente", "token" y "filename"'
+            });
+        }
+        
+        // Validar que el ambiente sea DEV o QA
+        if (!['DEV', 'QA'].includes(ambiente)) {
+            return res.status(400).json({
+                success: false,
+                error: 'El campo "ambiente" solo puede tener los valores "DEV" o "QA"'
+            });
+        }
+        
+        // Ejecutar Control-M API usando el archivo guardado
+        const result = await executeControlMApi(ambiente, token, filename);
+        
+        if (result.success) {
+            res.json({
+                success: true,
+                message: 'Control-M ejecutado exitosamente',
+                ambiente: ambiente,
+                filename: filename,
+                filePath: result.filePath,
+                controlMResponse: result.data,
+                status: result.status
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                error: 'Error ejecutando Control-M',
+                details: result.error,
+                status: result.status,
+                message: result.message
+            });
+        }
+        
+    } catch (error) {
+        console.error('Error en endpoint execute-controlm:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error interno del servidor',
+            details: error.message
+        });
+    }
+});
+
+// Endpoint para guardar y ejecutar Control-M en un solo paso
+app.post('/save-and-execute', async (req, res) => {
+    try {
+        const { ambiente, token, filename, jsonData } = req.body;
+        
+        // Validar que se proporcionen los datos requeridos
+        if (!ambiente || !token || !filename || !jsonData) {
+            return res.status(400).json({
+                success: false,
+                error: 'Se requieren los campos "ambiente", "token", "filename" y "jsonData"'
+            });
+        }
+        
+        // Validar que el ambiente sea DEV o QA
+        if (!['DEV', 'QA'].includes(ambiente)) {
+            return res.status(400).json({
+                success: false,
+                error: 'El campo "ambiente" solo puede tener los valores "DEV" o "QA"'
+            });
+        }
+        
+        // Validar que jsonData sea un objeto válido
+        let parsedJson;
+        try {
+            parsedJson = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
+        } catch (error) {
+            return res.status(400).json({
+                success: false,
+                error: 'El campo jsonData debe contener un JSON válido'
+            });
+        }
+        
+        // Asegurar que el nombre del archivo tenga extensión .json
+        const fileName = filename.endsWith('.json') ? filename : `${filename}.json`;
+        
+        // 1. Guardar el archivo en EC2
+        const storagePath = getStoragePath();
+        const filePath = path.join(storagePath, fileName);
+        fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2));
+        console.log(`✅ Archivo guardado en EC2: ${filePath}`);
+        
+        // 2. Ejecutar Control-M usando el archivo guardado
+        const controlMResult = await executeControlMApi(ambiente, token, filename);
+        
+        res.json({
+            success: controlMResult.success,
+            message: controlMResult.success 
+                ? 'Archivo guardado y Control-M ejecutado exitosamente' 
+                : 'Archivo guardado pero Control-M falló',
+            filename: fileName,
+            filePath: filePath,
+            storagePath: storagePath,
+            ambiente: ambiente,
+            controlMResult: controlMResult
+        });
+        
+    } catch (error) {
+        console.error('Error en endpoint save-and-execute:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Error interno del servidor',
+            details: error.message
+        });
+    }
+});
+
 // Endpoint para generar script automático
 app.post('/generate-script', (req, res) => {
     try {
@@ -630,8 +791,28 @@ app.post('/generate-script', (req, res) => {
 app.get('/diagnostic', (req, res) => {
     try {
         const currentUser = getCurrentUser();
-        const desktopPath = getDesktopPath();
-        const controlMPath = path.join(desktopPath, 'controlm');
+        const storagePath = getStoragePath();
+        
+        // Listar archivos en la carpeta de almacenamiento
+        let filesInStorage = [];
+        try {
+            if (fs.existsSync(storagePath)) {
+                filesInStorage = fs.readdirSync(storagePath)
+                    .filter(file => file.endsWith('.json'))
+                    .map(file => {
+                        const filePath = path.join(storagePath, file);
+                        const stats = fs.statSync(filePath);
+                        return {
+                            filename: file,
+                            size: stats.size,
+                            created: stats.birthtime,
+                            modified: stats.mtime
+                        };
+                    });
+            }
+        } catch (error) {
+            console.error('Error listando archivos:', error.message);
+        }
         
         // Información del sistema
         const systemInfo = {
@@ -647,10 +828,10 @@ app.get('/diagnostic', (req, res) => {
             },
             osUserInfo: os.userInfo(),
             currentUser: currentUser,
-            desktopPath: desktopPath,
-            desktopExists: fs.existsSync(desktopPath),
-            controlMPath: controlMPath,
-            controlMExists: fs.existsSync(controlMPath),
+            storagePath: storagePath,
+            storageExists: fs.existsSync(storagePath),
+            filesInStorage: filesInStorage,
+            filesCount: filesInStorage.length,
             // Información adicional de Windows
             windowsInfo: process.platform === 'win32' ? {
                 computerName: process.env.COMPUTERNAME,
@@ -663,14 +844,15 @@ app.get('/diagnostic', (req, res) => {
         
         res.json({
             success: true,
-            message: 'Información de diagnóstico del sistema',
+            message: 'Información de diagnóstico del sistema EC2',
             systemInfo: systemInfo,
             recommendations: {
                 message: 'Revisa la información del sistema para verificar las rutas detectadas',
                 nextSteps: [
-                    'Verifica que desktopPath sea correcto',
-                    'Verifica que desktopExists sea true',
-                    'Si las rutas no son correctas, revisa las variables de entorno'
+                    'Verifica que storagePath sea correcto',
+                    'Verifica que storageExists sea true',
+                    'Los archivos JSON se guardan en: ' + storagePath,
+                    'Usa POST /execute-controlm para ejecutar Control-M con archivos guardados'
                 ]
             }
         });
@@ -685,21 +867,49 @@ app.get('/diagnostic', (req, res) => {
 
 // Endpoint de prueba
 app.get('/', (req, res) => {
+    const storagePath = getStoragePath();
+    
     res.json({
-        message: 'API para guardar archivos JSON',
+        message: 'API para guardar archivos JSON en EC2 y ejecutar Control-M',
+        storagePath: storagePath,
         endpoints: {
-            'GET /diagnostic': 'Información de diagnóstico del sistema',
-            'POST /save-json': 'Prepara archivo JSON para guardar en computadora local',
+            'GET /': 'Información de la API',
+            'GET /diagnostic': 'Información de diagnóstico del sistema EC2',
+            'POST /save-json': 'Guarda archivo JSON en EC2 (/Desktop/jsonControlm)',
+            'POST /execute-controlm': 'Ejecuta Control-M usando archivo guardado en EC2',
+            'POST /save-and-execute': 'Guarda archivo y ejecuta Control-M en un solo paso',
+            'POST /download-json': 'Descarga archivo JSON',
             'POST /generate-script': 'Genera script automático para guardar archivo'
         },
-        example: {
-            method: 'POST',
-            url: '/save-json',
-            body: {
-                ambiente: 'DEV',
-                token: 'mi-token-123',
-                filename: 'mi-archivo',
-                jsonData: { "nombre": "ejemplo", "valor": 123 }
+        examples: {
+            saveJson: {
+                method: 'POST',
+                url: '/save-json',
+                body: {
+                    ambiente: 'DEV',
+                    token: 'mi-token-123',
+                    filename: 'mi-archivo',
+                    jsonData: { "nombre": "ejemplo", "valor": 123 }
+                }
+            },
+            executeControlM: {
+                method: 'POST',
+                url: '/execute-controlm',
+                body: {
+                    ambiente: 'DEV',
+                    token: 'mi-token-123',
+                    filename: 'mi-archivo'
+                }
+            },
+            saveAndExecute: {
+                method: 'POST',
+                url: '/save-and-execute',
+                body: {
+                    ambiente: 'DEV',
+                    token: 'mi-token-123',
+                    filename: 'mi-archivo',
+                    jsonData: { "nombre": "ejemplo", "valor": 123 }
+                }
             }
         }
     });
@@ -708,11 +918,17 @@ app.get('/', (req, res) => {
 // Iniciar servidor
 app.listen(PORT, () => {
     const currentUser = getCurrentUser();
-    const desktopPath = getDesktopPath();
-    const controlMPath = path.join(desktopPath, 'controlm');
+    const storagePath = getStoragePath();
     
-    console.log(`Servidor corriendo en http://localhost:${PORT}`);
-    console.log(`Usuario de la sesión: ${currentUser}`);
-    console.log(`Escritorio del usuario de sesión: ${desktopPath}`);
-    console.log(`Carpeta controlm: ${controlMPath}`);
+    console.log(`========================================`);
+    console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+    console.log(`👤 Usuario: ${currentUser}`);
+    console.log(`📁 Ruta de almacenamiento: ${storagePath}`);
+    console.log(`========================================`);
+    console.log(`📋 Endpoints disponibles:`);
+    console.log(`   POST /save-json - Guarda JSON en EC2`);
+    console.log(`   POST /execute-controlm - Ejecuta Control-M con archivo guardado`);
+    console.log(`   POST /save-and-execute - Guarda y ejecuta en un paso`);
+    console.log(`   GET /diagnostic - Información del sistema`);
+    console.log(`========================================`);
 });
