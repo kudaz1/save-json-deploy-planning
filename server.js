@@ -31,18 +31,26 @@ app.use(express.json({
 
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Middleware para capturar errores de parsing
+// Middleware para capturar errores de parsing JSON
 app.use((error, req, res, next) => {
-    if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
-        console.error('ERROR de sintaxis JSON:', error.message);
+    if (error instanceof SyntaxError || error.message.includes('JSON')) {
+        console.error('========================================');
+        console.error('ERROR DE PARSING JSON');
+        console.error('Mensaje:', error.message);
+        console.error('Stack:', error.stack);
+        console.error('Body recibido (primeros 1000 chars):', 
+            req.body ? JSON.stringify(req.body).substring(0, 1000) : 'No body');
+        console.error('========================================');
+        
         return res.status(400).json({
             success: false,
-            error: 'JSON inválido en el body de la petición',
+            error: 'Error al parsear el JSON del body',
             details: error.message,
-            hint: 'Verifica que el JSON esté correctamente formateado, especialmente las comillas'
+            hint: 'Verifica que el JSON esté correctamente formateado. Usa el script ejemplo-curl.sh como referencia.',
+            position: error.message.match(/position (\d+)/)?.[1] || 'desconocida'
         });
     }
-    next();
+    next(error);
 });
 
 // Función para obtener el usuario de la sesión actual
