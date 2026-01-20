@@ -10,6 +10,9 @@ const { execSync } = require('child_process');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Almacenar información de la última llamada a Control-M para debugging
+let lastControlMCall = null;
+
 // Middleware
 app.use(cors());
 
@@ -539,6 +542,21 @@ guardarArchivoAutomaticamente();
 // Ahora lee el archivo desde la ruta de almacenamiento en EC2
 async function executeControlMApi(controlmApiUrl, token, filePath) {
     try {
+        // Almacenar información de la llamada para debugging
+        const fileName = path.basename(filePath);
+        const fileStats = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
+        
+        lastControlMCall = {
+            timestamp: new Date().toISOString(),
+            url: controlmApiUrl,
+            token: token ? `${token.substring(0, 20)}...${token.substring(token.length - 10)}` : 'NO',
+            filePath: filePath,
+            fileName: fileName,
+            fileSize: fileStats ? fileStats.size : 0,
+            fileExists: fs.existsSync(filePath),
+            status: 'in_progress'
+        };
+        
         console.log(`[CONTROL-M] ========================================`);
         console.log(`[CONTROL-M] Ejecutando API de Control-M`);
         console.log(`[CONTROL-M] URL: ${controlmApiUrl}`);
@@ -547,14 +565,12 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
         
         // Verificar que el archivo existe
         if (!fs.existsSync(filePath)) {
+            lastControlMCall.status = 'error';
+            lastControlMCall.error = `El archivo no existe en la ruta: ${filePath}`;
             throw new Error(`El archivo no existe en la ruta: ${filePath}`);
         }
         
         console.log(`[CONTROL-M] Archivo verificado que existe`);
-
-        // Obtener el nombre del archivo de la ruta
-        const fileName = path.basename(filePath);
-        console.log(`[CONTROL-M] Nombre del archivo: ${fileName}`);
         
         // Leer el archivo desde el sistema de archivos
         console.log(`[CONTROL-M] Leyendo archivo desde: ${filePath}`);
@@ -570,21 +586,47 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
 
         // Configurar headers con Bearer token
         console.log(`[CONTROL-M] Configurando headers...`);
+        const headers = {
+            ...form.getHeaders(),
+            'Authorization': `Bearer ${token}`
+        };
+        
+        // Log detallado de la configuración
+        console.log(`[CONTROL-M] ========================================`);
+        console.log(`[CONTROL-M] 📋 CONFIGURACIÓN DE LA LLAMADA:`);
+        console.log(`[CONTROL-M]   URL: ${controlmApiUrl}`);
+        console.log(`[CONTROL-M]   Método: POST`);
+        console.log(`[CONTROL-M]   Headers:`);
+        console.log(`[CONTROL-M]     - Content-Type: ${headers['content-type']}`);
+        console.log(`[CONTROL-M]     - Authorization: Bearer ${token.substring(0, 20)}...${token.substring(token.length - 10)}`);
+        console.log(`[CONTROL-M]   Form Data:`);
+        console.log(`[CONTROL-M]     - Field: definitionsFile`);
+        console.log(`[CONTROL-M]     - Filename: ${fileName}`);
+        console.log(`[CONTROL-M]     - Content-Type: application/json`);
+        console.log(`[CONTROL-M]     - File Path: ${filePath}`);
+        console.log(`[CONTROL-M] ========================================`);
+        
         const config = {
-            headers: {
-                ...form.getHeaders(),
-                'Authorization': `Bearer ${token}`
-            },
+            headers: headers,
             timeout: 60000 // 60 segundos timeout (aumentado para archivos grandes)
         };
 
         // Realizar la petición POST
-        console.log(`[CONTROL-M] Enviando petición POST a Control-M...`);
+        console.log(`[CONTROL-M] 🚀 Enviando petición POST a Control-M...`);
+        const startTime = Date.now();
         const response = await axios.post(controlmApiUrl, form, config);
+        const endTime = Date.now();
+        const duration = endTime - startTime;
         
-        console.log(`[CONTROL-M] ✅ API ejecutada exitosamente`);
-        console.log(`[CONTROL-M] Status: ${response.status}`);
-        console.log(`[CONTROL-M] Response:`, JSON.stringify(response.data).substring(0, 200));
+        console.log(`[CONTROL-M] ========================================`);
+        console.log(`[CONTROL-M] ✅ RESPUESTA DE CONTROL-M:`);
+        console.log(`[CONTROL-M]   Status: ${response.status} ${response.statusText || ''}`);
+        console.log(`[CONTROL-M]   Tiempo de respuesta: ${duration}ms`);
+        console.log(`[CONTROL-M]   Headers de respuesta:`, JSON.stringify(response.headers, null, 2));
+        console.log(`[CONTROL-M]   Body (primeros 500 chars):`, JSON.stringify(response.data).substring(0, 500));
+        if (JSON.stringify(response.data).length > 500) {
+            console.log(`[CONTROL-M]   ... (respuesta truncada, longitud total: ${JSON.stringify(response.data).length} chars)`);
+        }
         console.log(`[CONTROL-M] ========================================`);
         
         return {
@@ -596,11 +638,43 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
         };
 
     } catch (error) {
-        console.error(`[CONTROL-M] ❌ Error ejecutando API de Control-M:`, error.message);
-        if (error.response) {
-            console.error(`[CONTROL-M] Status:`, error.response.status);
-            console.error(`[CONTROL-M] Data:`, error.response.data);
+        // Actualizar información del error
+        if (lastControlMCall) {
+            lastControlMCall.status = 'error';
+            lastControlMCall.error = {
+                message: error.message,
+                status: error.response?.status || 'N/A',
+                statusText: error.response?.statusText || 'N/A',
+                data: error.response?.data || null,
+                requestConfig: error.config ? {
+                    url: error.config.url,
+                    method: error.config.method,
+                    headers: error.config.headers ? Object.keys(error.config.headers) : 'N/A'
+                } : null
+            };
         }
+        
+        console.error(`[CONTROL-M] ========================================`);
+        console.error(`[CONTROL-M] ❌ ERROR EJECUTANDO CONTROL-M:`);
+        console.error(`[CONTROL-M]   Mensaje: ${error.message}`);
+        console.error(`[CONTROL-M]   URL intentada: ${controlmApiUrl}`);
+        console.error(`[CONTROL-M]   Archivo: ${filePath}`);
+        
+        if (error.response) {
+            console.error(`[CONTROL-M]   Status: ${error.response.status} ${error.response.statusText || ''}`);
+            console.error(`[CONTROL-M]   Headers de respuesta:`, JSON.stringify(error.response.headers, null, 2));
+            console.error(`[CONTROL-M]   Body de error:`, JSON.stringify(error.response.data, null, 2));
+        } else if (error.request) {
+            console.error(`[CONTROL-M]   No se recibió respuesta del servidor`);
+            console.error(`[CONTROL-M]   Request config:`, JSON.stringify({
+                url: controlmApiUrl,
+                method: 'POST',
+                headers: error.config?.headers ? Object.keys(error.config.headers) : 'N/A'
+            }, null, 2));
+        } else {
+            console.error(`[CONTROL-M]   Error de configuración:`, error.message);
+        }
+        console.error(`[CONTROL-M] ========================================`);
         
         return {
             success: false,
@@ -1324,6 +1398,55 @@ app.get('/logs', (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Error obteniendo información de logs',
+            details: error.message
+        });
+    }
+});
+
+// Endpoint para ver la última llamada a Control-M
+app.get('/last-controlm-call', (req, res) => {
+    try {
+        if (!lastControlMCall) {
+            return res.json({
+                success: false,
+                message: 'No se ha realizado ninguna llamada a Control-M aún',
+                instructions: 'Ejecuta POST /save-json con el campo controlm_api para que se registre la llamada'
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: 'Información de la última llamada a Control-M',
+            call: lastControlMCall,
+            comparison: {
+                expected: {
+                    url: 'https://controlms1de01:8446/automation-api/deploy',
+                    method: 'POST',
+                    header: 'Authorization: Bearer TOKEN',
+                    formField: 'definitionsFile',
+                    formType: 'file (multipart/form-data)'
+                },
+                actual: {
+                    url: lastControlMCall.url,
+                    method: 'POST',
+                    header: `Authorization: Bearer ${lastControlMCall.token}`,
+                    formField: lastControlMCall.formData?.field || 'N/A',
+                    formType: 'file (multipart/form-data)',
+                    filename: lastControlMCall.formData?.filename || 'N/A',
+                    filePath: lastControlMCall.filePath
+                },
+                matches: {
+                    url: lastControlMCall.url.includes('controlms') && lastControlMCall.url.includes('/automation-api/deploy'),
+                    hasToken: !!lastControlMCall.token && lastControlMCall.token !== 'NO',
+                    hasFormField: lastControlMCall.formData?.field === 'definitionsFile',
+                    fileExists: lastControlMCall.fileExists
+                }
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: 'Error obteniendo información de la última llamada',
             details: error.message
         });
     }

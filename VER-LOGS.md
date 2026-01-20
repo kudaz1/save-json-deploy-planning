@@ -119,12 +119,94 @@ Cuando ejecutas el curl, deberías ver:
    === ✅ ÉXITO: Archivo guardado ===
    ```
 
-3. **Si hay errores:**
+3. **Logs de Control-M (si se ejecuta automáticamente):**
+   ```
+   === EJECUTANDO CONTROL-M AUTOMÁTICAMENTE ===
+   [CONTROL-M] ========================================
+   [CONTROL-M] Ejecutando API de Control-M
+   [CONTROL-M] URL: https://controlms1de01:8446/automation-api/deploy
+   [CONTROL-M] Archivo: /root/Desktop/jsonControlm/archivo.json
+   [CONTROL-M] Token: 3DFAE7FC808867A6E3...
+   [CONTROL-M] 📋 CONFIGURACIÓN DE LA LLAMADA:
+   [CONTROL-M]   URL: https://controlms1de01:8446/automation-api/deploy
+   [CONTROL-M]   Método: POST
+   [CONTROL-M]   Headers:
+   [CONTROL-M]     - Content-Type: multipart/form-data; boundary=...
+   [CONTROL-M]     - Authorization: Bearer 3DFAE7FC808867A6E3...A613
+   [CONTROL-M]   Form Data:
+   [CONTROL-M]     - Field: definitionsFile
+   [CONTROL-M]     - Filename: archivo.json
+   [CONTROL-M]     - Content-Type: application/json
+   [CONTROL-M]     - File Path: /root/Desktop/jsonControlm/archivo.json
+   [CONTROL-M] 🚀 Enviando petición POST a Control-M...
+   [CONTROL-M] ✅ RESPUESTA DE CONTROL-M:
+   [CONTROL-M]   Status: 200 OK
+   [CONTROL-M]   Tiempo de respuesta: 1234ms
+   [CONTROL-M]   Body: {...}
+   ```
+
+4. **Si hay errores:**
    ```
    [RAW-BODY] ❌ ERROR parseando: ...
    [8] ❌ ERROR al escribir: ...
    [9] ❌ ERROR: Archivo no existe después de escribirlo
+   [CONTROL-M] ❌ ERROR EJECUTANDO CONTROL-M:
+   [CONTROL-M]   Mensaje: ...
+   [CONTROL-M]   Status: 401
    ```
+
+## Cómo Verificar que Control-M se Llama Correctamente
+
+### 1. Buscar logs de Control-M específicamente
+
+```bash
+# Ver solo logs de Control-M
+pm2 logs save-json-api | grep "\[CONTROL-M\]"
+
+# Ver configuración de la llamada
+pm2 logs save-json-api | grep -A 10 "CONFIGURACIÓN DE LA LLAMADA"
+
+# Ver respuesta de Control-M
+pm2 logs save-json-api | grep -A 5 "RESPUESTA DE CONTROL-M"
+```
+
+### 2. Verificar los parámetros enviados
+
+Los logs mostrarán exactamente:
+- ✅ **URL**: La URL completa de Control-M que se está usando
+- ✅ **Token**: El token Bearer (primeros y últimos caracteres)
+- ✅ **Archivo**: La ruta completa del archivo que se está enviando
+- ✅ **Headers**: Todos los headers de la petición
+- ✅ **Form Data**: El campo `definitionsFile` con el nombre del archivo
+
+### 3. Comparar con tu curl esperado
+
+Tu curl esperado es:
+```bash
+curl --location 'https://controlms1de01:8446/automation-api/deploy' \
+--header 'Authorization: Bearer TOKEN' \
+--form 'definitionsFile=@"/ruta/archivo.json"'
+```
+
+En los logs deberías ver:
+- URL: `https://controlms1de01:8446/automation-api/deploy` ✅
+- Authorization: `Bearer TOKEN` ✅
+- Form field: `definitionsFile` ✅
+- Filename: `archivo.json` ✅
+- File path: `/root/Desktop/jsonControlm/archivo.json` ✅
+
+### 4. Verificar errores específicos
+
+```bash
+# Ver errores de Control-M
+pm2 logs save-json-api --err | grep "\[CONTROL-M\]"
+
+# Ver si el archivo no existe
+pm2 logs save-json-api | grep "El archivo no existe"
+
+# Ver errores de conexión
+pm2 logs save-json-api | grep "ECONNREFUSED\|ETIMEDOUT"
+```
 
 ## Si No Ves Logs
 
