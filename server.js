@@ -316,39 +316,23 @@ function ensureDirectoryExists(dirPath) {
 
 // Función para obtener la ruta de almacenamiento en EC2
 function getStoragePath() {
-    // Ruta solicitada: /Desktop/jsonControlm
-    // En Linux/EC2, intentamos crear /Desktop si no existe, o usar home/Desktop
-    const rootDesktop = '/Desktop';
+    // Ruta solicitada: ~/Desktop/jsonControlm
+    // En Linux/EC2, esto se expande a /root/Desktop/jsonControlm para usuario root
+    // o /home/usuario/Desktop/jsonControlm para otros usuarios
     const homeDir = os.homedir();
-    const homeDesktop = path.join(homeDir, 'Desktop');
+    const desktopPath = path.join(homeDir, 'Desktop');
+    const storagePath = path.join(desktopPath, 'jsonControlm');
     
-    let storagePath;
-    
-    // Intentar usar /Desktop directamente (ruta solicitada)
-    if (fs.existsSync(rootDesktop)) {
-        storagePath = path.join(rootDesktop, 'jsonControlm');
-        console.log(`Usando ruta raíz: ${storagePath}`);
-    } else {
-        // Intentar crear /Desktop (puede requerir permisos sudo)
-        try {
-            if (!fs.existsSync(rootDesktop)) {
-                fs.mkdirSync(rootDesktop, { recursive: true, mode: 0o755 });
-                console.log(`Creado /Desktop en raíz`);
-            }
-            storagePath = path.join(rootDesktop, 'jsonControlm');
-            console.log(`Usando ruta raíz creada: ${storagePath}`);
-        } catch (error) {
-            // Si no se puede crear /Desktop, usar home/Desktop
-            console.log(`No se pudo crear /Desktop, usando home/Desktop: ${error.message}`);
-            storagePath = path.join(homeDesktop, 'jsonControlm');
-            console.log(`Usando ruta home: ${storagePath}`);
-        }
+    // Asegurar que el directorio Desktop existe
+    if (!fs.existsSync(desktopPath)) {
+        fs.mkdirSync(desktopPath, { recursive: true, mode: 0o755 });
+        console.log(`Creado Desktop en home: ${desktopPath}`);
     }
     
     // Asegurar que el directorio jsonControlm existe
     ensureDirectoryExists(storagePath);
     
-    console.log(`Ruta de almacenamiento final: ${storagePath}`);
+    console.log(`Ruta de almacenamiento: ${storagePath}`);
     return storagePath;
 }
 

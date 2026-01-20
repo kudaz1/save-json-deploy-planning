@@ -47,16 +47,13 @@ cd save-json
 npm install
 ```
 
-### 5. Crear carpeta de almacenamiento
+### 5. La carpeta de almacenamiento se crea automáticamente
 
-```bash
-# Opción 1: Crear /Desktop/jsonControlm (requiere sudo)
-sudo mkdir -p /Desktop/jsonControlm
-sudo chmod 755 /Desktop
-sudo chmod 755 /Desktop/jsonControlm
+La API creará automáticamente la carpeta `~/Desktop/jsonControlm` al iniciar. 
+- Para usuario root: `/root/Desktop/jsonControlm`
+- Para otros usuarios: `/home/usuario/Desktop/jsonControlm`
 
-# Opción 2: La API creará automáticamente ~/Desktop/jsonControlm si no tienes permisos
-```
+No es necesario crearla manualmente.
 
 ### 6. Configurar variables de entorno (opcional)
 
@@ -207,9 +204,13 @@ pm2 restart save-json-api
 
 ## Solución de Problemas
 
-### Error: "Cannot create /Desktop"
+### Verificar la ruta de almacenamiento
 
-La API automáticamente usará `~/Desktop/jsonControlm` como fallback. Esto es normal si no tienes permisos de root.
+La API usa `~/Desktop/jsonControlm` que se expande según el usuario:
+- Usuario root: `/root/Desktop/jsonControlm`
+- Otros usuarios: `/home/usuario/Desktop/jsonControlm`
+
+Puedes verificar la ruta exacta usando el endpoint `/diagnostic`.
 
 ### Error: "Port 3000 already in use"
 
@@ -228,8 +229,10 @@ npm --version
 ### Verificar permisos de la carpeta
 
 ```bash
-ls -la /Desktop/jsonControlm
-# o
+# Para usuario root
+ls -la /root/Desktop/jsonControlm
+
+# Para otros usuarios
 ls -la ~/Desktop/jsonControlm
 ```
 

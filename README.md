@@ -1,6 +1,6 @@
 # API para Guardar Archivos JSON y Ejecutar Control-M
 
-API Node.js/Express que guarda archivos JSON en una instancia EC2 y ejecuta la API de Control-M usando los archivos guardados. Los archivos se almacenan en `/Desktop/jsonControlm` dentro de la instancia EC2.
+API Node.js/Express que guarda archivos JSON en una instancia EC2 y ejecuta la API de Control-M usando los archivos guardados. Los archivos se almacenan en `~/Desktop/jsonControlm` (que se expande a `/root/Desktop/jsonControlm` para usuario root) dentro de la instancia EC2.
 
 ## Instalación
 
@@ -26,14 +26,14 @@ El servidor se ejecutará en `http://localhost:3000`
 
 ### Despliegue en EC2
 
-La API está diseñada para ejecutarse en una instancia EC2. Los archivos JSON se guardan en `/Desktop/jsonControlm` dentro de la instancia.
+La API está diseñada para ejecutarse en una instancia EC2. Los archivos JSON se guardan en `~/Desktop/jsonControlm` dentro de la instancia (se expande a `/root/Desktop/jsonControlm` para usuario root).
 
 **Configuración en EC2:**
 
 1. Clonar el repositorio:
 ```bash
-git clone https://github.com/kudaz1/save-json.git
-cd save-json
+git clone https://github.com/kudaz1/save-json-deploy-planning.git
+cd save-json-deploy-planning
 ```
 
 2. Instalar dependencias:
@@ -41,12 +41,7 @@ cd save-json
 npm install
 ```
 
-3. Crear la carpeta de almacenamiento (si no existe):
-```bash
-sudo mkdir -p /Desktop/jsonControlm
-sudo chmod 755 /Desktop
-sudo chmod 755 /Desktop/jsonControlm
-```
+3. La carpeta de almacenamiento se crea automáticamente en `~/Desktop/jsonControlm` al iniciar el servidor.
 
 4. Iniciar el servidor:
 ```bash
@@ -61,13 +56,13 @@ pm2 save
 pm2 startup
 ```
 
-**Nota**: Si no tienes permisos para crear `/Desktop`, la API usará automáticamente `~/Desktop/jsonControlm` como fallback.
+**Nota**: La carpeta se crea automáticamente en el home del usuario que ejecuta la API. Para usuario root será `/root/Desktop/jsonControlm`.
 
 ### Endpoints
 
 #### POST /save-json
 
-Guarda un archivo JSON en `/Desktop/jsonControlm` dentro de la instancia EC2.
+Guarda un archivo JSON en `~/Desktop/jsonControlm` dentro de la instancia EC2 (se expande a `/root/Desktop/jsonControlm` para usuario root).
 
 **Parámetros del body:**
 - `ambiente` (string): Ambiente donde se ejecuta - solo permite "DEV" o "QA"
@@ -98,8 +93,8 @@ curl -X POST http://localhost:3000/save-json \
   "success": true,
   "message": "Archivo guardado exitosamente en EC2",
   "filename": "mi-archivo.json",
-  "filePath": "/Desktop/jsonControlm/mi-archivo.json",
-  "storagePath": "/Desktop/jsonControlm",
+  "filePath": "/root/Desktop/jsonControlm/mi-archivo.json",
+  "storagePath": "/root/Desktop/jsonControlm",
   "ambiente": "DEV"
 }
 ```
@@ -132,7 +127,7 @@ curl -X POST http://localhost:3000/execute-controlm \
   "message": "Control-M ejecutado exitosamente",
   "ambiente": "DEV",
   "filename": "mi-archivo.json",
-  "filePath": "/Desktop/jsonControlm/mi-archivo.json",
+  "filePath": "/root/Desktop/jsonControlm/mi-archivo.json",
   "controlMResponse": { ... },
   "status": 200
 }
@@ -174,7 +169,7 @@ Endpoint raíz que muestra información sobre la API y ejemplos de uso de todos 
 
 ## Características
 
-- ✅ Guarda archivos JSON en `/Desktop/jsonControlm` dentro de EC2
+- ✅ Guarda archivos JSON en `~/Desktop/jsonControlm` dentro de EC2 (se expande a `/root/Desktop/jsonControlm` para usuario root)
 - ✅ Ejecuta Control-M API usando archivos guardados en el sistema de archivos
 - ✅ Valida que el JSON sea válido antes de procesarlo
 - ✅ Selecciona automáticamente el servidor correcto según el ambiente (DEV/QA)
@@ -187,8 +182,9 @@ Endpoint raíz que muestra información sobre la API y ejemplos de uso de todos 
 ## Almacenamiento
 
 Los archivos JSON se guardan en:
-- **Ruta preferida**: `/Desktop/jsonControlm/` (requiere permisos)
-- **Ruta fallback**: `~/Desktop/jsonControlm/` (si no se puede crear /Desktop)
+- **Ruta**: `~/Desktop/jsonControlm/` 
+- Para usuario root: `/root/Desktop/jsonControlm/`
+- Para otros usuarios: `/home/usuario/Desktop/jsonControlm/`
 
 La carpeta se crea automáticamente al iniciar el servidor si no existe.
 
@@ -202,7 +198,7 @@ La API ejecuta Control-M directamente desde la instancia EC2 usando los archivos
 La petición se configura con:
 - **Authorization**: Bearer token (usando el campo `token` enviado)
 - **Content-Type**: multipart/form-data
-- **definitionsFile**: El archivo JSON leído desde `/Desktop/jsonControlm/`
+- **definitionsFile**: El archivo JSON leído desde `~/Desktop/jsonControlm/`
 
 El archivo se lee directamente del sistema de archivos de EC2 antes de enviarse a Control-M.
 
