@@ -519,106 +519,108 @@ async function executeControlMApi(ambiente, token, filename) {
     }
 }
 
-// Endpoint para guardar archivo JSON en EC2 - VERSIÓN DEFINITIVA Y SIMPLE
+// Endpoint para guardar archivo JSON en EC2 - COPIA EXACTA DE LA LÓGICA DEL SCRIPT QUE FUNCIONA
 app.post('/save-json', (req, res) => {
     console.log('=== INICIO POST /save-json ===');
     
     try {
-        // 1. Obtener datos del request
+        // Validaciones básicas
         const { ambiente, token, filename, jsonData } = req.body;
-        console.log('Datos recibidos:', { ambiente, token, filename: filename, hasJsonData: !!jsonData });
-
-        // 2. Validaciones básicas
         if (!ambiente || !token || !filename || !jsonData) {
-            console.error('ERROR: Faltan campos requeridos');
             return res.status(400).json({
                 success: false,
                 error: 'Se requieren los campos "ambiente", "token", "filename" y "jsonData"'
             });
         }
-
         if (!['DEV', 'QA'].includes(ambiente)) {
-            console.error('ERROR: Ambiente inválido');
             return res.status(400).json({
                 success: false,
                 error: 'El campo "ambiente" solo puede tener los valores "DEV" o "QA"'
             });
         }
 
-        // 3. Parsear JSON
+        // Parsear JSON
         let parsedJson;
         try {
             parsedJson = typeof jsonData === 'string' ? JSON.parse(jsonData) : jsonData;
         } catch (error) {
-            console.error('ERROR: JSON inválido', error.message);
             return res.status(400).json({
                 success: false,
                 error: 'El campo jsonData debe contener un JSON válido'
             });
         }
 
-        // 4. Preparar nombre de archivo
+        // Preparar nombre de archivo
         let fileName = filename.trim();
         if (!fileName.endsWith('.json')) {
             fileName = fileName + '.json';
         }
-        // Sanitizar nombre
         fileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/_{2,}/g, '_');
         if (!fileName || fileName === '.json') {
             fileName = 'archivo.json';
         }
-        console.log('Nombre de archivo:', fileName);
 
-        // 5. Obtener ruta de almacenamiento
+        // ===== AQUÍ EMPIEZA LA LÓGICA IDÉNTICA AL SCRIPT QUE FUNCIONA =====
+        
+        // 1. Obtener rutas (EXACTO como el script)
         const homeDir = os.homedir();
-        console.log('Home directory:', homeDir);
+        console.log('1. Home directory:', homeDir);
         
         const desktopPath = path.join(homeDir, 'Desktop');
         const storagePath = path.join(desktopPath, 'jsonControlm');
         const filePath = path.join(storagePath, fileName);
         
-        console.log('Rutas:', { desktopPath, storagePath, filePath });
-
-        // 6. Crear carpetas SIEMPRE (por si acaso)
+        console.log('2. Desktop path:', desktopPath);
+        console.log('3. Storage path:', storagePath);
+        console.log('4. File path:', filePath);
+        
+        // 2. Crear carpetas (EXACTO como el script)
+        console.log('5. Creando carpetas...');
         try {
             fs.mkdirSync(desktopPath, { recursive: true });
-            console.log('Desktop creado/verificado');
+            console.log('   ✅ Desktop creado');
         } catch (e) {
-            console.log('Desktop ya existe o error (ignorado):', e.message);
+            console.log('   ℹ️ Desktop ya existe');
         }
         
         try {
             fs.mkdirSync(storagePath, { recursive: true });
-            console.log('jsonControlm creado/verificado');
+            console.log('   ✅ jsonControlm creado');
         } catch (e) {
-            console.log('jsonControlm ya existe o error (ignorado):', e.message);
+            console.log('   ℹ️ jsonControlm ya existe');
         }
-
-        // 7. Convertir JSON a string
+        
+        // 3. Preparar datos (EXACTO como el script)
         const jsonString = JSON.stringify(parsedJson, null, 2);
-        console.log('JSON string preparado, longitud:', jsonString.length);
-
-        // 8. ESCRIBIR ARCHIVO - FORMA ABSOLUTAMENTE DIRECTA
-        console.log('Escribiendo archivo en:', filePath);
+        console.log('6. JSON preparado, longitud:', jsonString.length);
+        
+        // 4. ESCRIBIR ARCHIVO (EXACTO como el script)
+        console.log('7. Escribiendo archivo...');
         fs.writeFileSync(filePath, jsonString, 'utf8');
-        console.log('✅ Archivo escrito');
-
-        // 9. VERIFICAR INMEDIATAMENTE
+        console.log('   ✅ Archivo escrito');
+        
+        // 5. VERIFICAR (EXACTO como el script)
+        console.log('8. Verificando archivo...');
         if (!fs.existsSync(filePath)) {
-            console.error('❌ ERROR: Archivo no existe después de escribirlo');
-            return res.status(500).json({
-                success: false,
-                error: 'El archivo no se creó',
-                filePath: filePath
-            });
+            throw new Error('El archivo no existe después de escribirlo');
         }
-
-        // 10. Obtener stats
+        
         const stats = fs.statSync(filePath);
-        console.log('✅ Archivo verificado - Tamaño:', stats.size, 'bytes');
-
-        // 11. RESPONDER CON ÉXITO
-        console.log('=== ÉXITO: Archivo guardado ===');
+        console.log('   ✅ Archivo existe');
+        console.log('   ✅ Tamaño:', stats.size, 'bytes');
+        
+        // 6. LEER ARCHIVO para verificar (EXACTO como el script)
+        console.log('9. Leyendo archivo...');
+        const readContent = fs.readFileSync(filePath, 'utf8');
+        console.log('   ✅ Archivo leído, longitud:', readContent.length);
+        
+        // 7. VERIFICAR CONTENIDO (EXACTO como el script)
+        JSON.parse(readContent);
+        console.log('   ✅ JSON válido');
+        
+        console.log('=== ✅ ÉXITO: Archivo guardado ===');
+        
+        // Responder
         res.json({
             success: true,
             message: 'Archivo guardado exitosamente',
@@ -630,14 +632,15 @@ app.post('/save-json', (req, res) => {
         });
 
     } catch (error) {
-        console.error('=== ERROR CRÍTICO ===');
-        console.error('Mensaje:', error.message);
+        console.error('=== ❌ ERROR ===');
+        console.error('Error:', error.message);
+        console.error('Code:', error.code);
         console.error('Stack:', error.stack);
         res.status(500).json({
             success: false,
             error: 'Error al guardar el archivo',
             details: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            code: error.code
         });
     }
 });
