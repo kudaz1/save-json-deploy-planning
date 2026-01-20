@@ -13,22 +13,63 @@ const PORT = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 
-// Middleware para manejar errores de parsing JSON
-app.use(express.json({ 
-    limit: '50mb',
-    strict: false, // Permitir JSON más flexible
-    verify: (req, res, buf, encoding) => {
+// Middleware para capturar raw body SOLO para /save-json
+app.use('/save-json', express.raw({ type: '*/*', limit: '50mb' }), (req, res, next) => {
+    try {
+        let bodyString = req.body.toString('utf8');
+        console.log('[RAW-BODY] Longitud:', bodyString.length);
+        console.log('[RAW-BODY] Primeros 300 chars:', bodyString.substring(0, 300));
+        
+        // Buscar el patrón problemático de comillas escapadas
+        // El problema es: '\'' que en el JSON se ve como: "PARM('\''CTINTDEM'\'' '\''NEXDEM'\'')"
+        // Esto debería ser: "PARM('CTINTDEM' 'NEXDEM')"
+        
+        // Limpiar el JSON: reemplazar '\'' con '
+        let cleanedBody = bodyString;
+        
+        // Patrón 1: '\'' dentro de strings JSON
+        cleanedBody = cleanedBody.replace(/\\'\\'\\'/g, "'");
+        cleanedBody = cleanedBody.replace(/\\'\\'/g, "'");
+        
+        // Patrón 2: Si hay comillas simples escapadas de otra forma
+        cleanedBody = cleanedBody.replace(/\\'/g, "'");
+        
+        console.log('[RAW-BODY] Body limpiado, intentando parsear...');
+        
+        // Intentar parsear
         try {
-            JSON.parse(buf.toString('utf8'));
-        } catch (e) {
-            console.error('ERROR al parsear JSON en middleware:', e.message);
-            console.error('Posición del error:', e.message.match(/position (\d+)/)?.[1]);
-            console.error('Primeros 500 caracteres del body:', buf.toString('utf8').substring(0, 500));
-            throw new Error(`JSON inválido: ${e.message}`);
+            req.body = JSON.parse(cleanedBody);
+            console.log('[RAW-BODY] ✅ JSON parseado exitosamente');
+            console.log('[RAW-BODY] Keys:', Object.keys(req.body));
+            next();
+        } catch (parseError) {
+            console.error('[RAW-BODY] ❌ Error parseando:', parseError.message);
+            console.error('[RAW-BODY] Posición:', parseError.message.match(/position (\d+)/)?.[1]);
+            
+            // Guardar para debugging
+            const debugFile = path.join(os.tmpdir(), 'debug-json-' + Date.now() + '.txt');
+            fs.writeFileSync(debugFile, cleanedBody);
+            console.error('[RAW-BODY] Body guardado en:', debugFile);
+            
+            return res.status(400).json({
+                success: false,
+                error: 'Error al parsear JSON',
+                details: parseError.message,
+                debugFile: debugFile
+            });
         }
+    } catch (error) {
+        console.error('[RAW-BODY] ERROR:', error.message);
+        return res.status(500).json({
+            success: false,
+            error: 'Error procesando body',
+            details: error.message
+        });
     }
-}));
+});
 
+// Middleware normal para otros endpoints
+app.use(express.json({ limit: '50mb', strict: false }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Middleware para capturar errores de parsing JSON
@@ -38,16 +79,13 @@ app.use((error, req, res, next) => {
         console.error('ERROR DE PARSING JSON');
         console.error('Mensaje:', error.message);
         console.error('Stack:', error.stack);
-        console.error('Body recibido (primeros 1000 chars):', 
-            req.body ? JSON.stringify(req.body).substring(0, 1000) : 'No body');
         console.error('========================================');
         
         return res.status(400).json({
             success: false,
             error: 'Error al parsear el JSON del body',
             details: error.message,
-            hint: 'Verifica que el JSON esté correctamente formateado. Usa el script ejemplo-curl.sh como referencia.',
-            position: error.message.match(/position (\d+)/)?.[1] || 'desconocida'
+            hint: 'Verifica que el JSON esté correctamente formateado.'
         });
     }
     next(error);
