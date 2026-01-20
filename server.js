@@ -314,6 +314,32 @@ function ensureDirectoryExists(dirPath) {
     }
 }
 
+// Función para sanitizar y normalizar el nombre de archivo
+function sanitizeFilename(filename) {
+    if (!filename || typeof filename !== 'string') {
+        throw new Error('El filename debe ser una cadena de texto válida');
+    }
+    
+    // Sanitizar el nombre del archivo (eliminar caracteres peligrosos)
+    let sanitized = filename
+        .replace(/[^a-zA-Z0-9._-]/g, '_')  // Reemplazar caracteres especiales
+        .replace(/_{2,}/g, '_')            // Reemplazar múltiples guiones bajos
+        .replace(/^_+|_+$/g, '')          // Eliminar guiones bajos al inicio/final
+        .trim();
+    
+    // Si después de sanitizar está vacío, usar un nombre por defecto
+    if (!sanitized) {
+        sanitized = 'archivo';
+    }
+    
+    // Asegurar que tenga extensión .json
+    if (!sanitized.endsWith('.json')) {
+        sanitized = `${sanitized}.json`;
+    }
+    
+    return sanitized;
+}
+
 // Función para obtener la ruta de almacenamiento en EC2
 function getStoragePath() {
     console.log('=== INICIANDO getStoragePath() ===');
@@ -516,8 +542,8 @@ async function executeControlMApi(ambiente, token, filename) {
         // Obtener la ruta de almacenamiento
         const storagePath = getStoragePath();
         
-        // Asegurar que el nombre del archivo tenga extensión .json
-        const fileName = filename.endsWith('.json') ? filename : `${filename}.json`;
+        // Sanitizar y normalizar el nombre del archivo (debe coincidir con el guardado)
+        const fileName = sanitizeFilename(filename);
         const filePath = path.join(storagePath, fileName);
         
         // Verificar que el archivo existe
@@ -604,20 +630,47 @@ app.post('/save-json', async (req, res) => {
             });
         }
 
-        // Asegurar que el nombre del archivo tenga extensión .json
-        const fileName = filename.endsWith('.json') ? filename : `${filename}.json`;
+        // Sanitizar y normalizar el nombre del archivo
+        const fileName = sanitizeFilename(filename);
         
         // Obtener ruta de almacenamiento en EC2
         const storagePath = getStoragePath();
         
-        console.log(`Guardando archivo en EC2: ${storagePath}`);
+        console.log(`=== GUARDANDO ARCHIVO ===`);
+        console.log(`Filename recibido: ${filename}`);
+        console.log(`Filename final (sanitizado): ${fileName}`);
+        console.log(`Ruta de almacenamiento: ${storagePath}`);
         
         // Ruta completa del archivo
         const filePath = path.join(storagePath, fileName);
+        console.log(`Ruta completa del archivo: ${filePath}`);
+        
+        // Verificar que la carpeta existe
+        if (!fs.existsSync(storagePath)) {
+            console.error(`❌ ERROR: La carpeta de almacenamiento no existe: ${storagePath}`);
+            return res.status(500).json({
+                success: false,
+                error: 'La carpeta de almacenamiento no existe',
+                storagePath: storagePath
+            });
+        }
         
         // Guardar el archivo JSON en EC2
-        fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2));
-        console.log(`✅ Archivo guardado en EC2: ${filePath}`);
+        try {
+            fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2), 'utf8');
+            console.log(`✅ Archivo guardado exitosamente en: ${filePath}`);
+            
+            // Verificar que el archivo se guardó correctamente
+            if (fs.existsSync(filePath)) {
+                const stats = fs.statSync(filePath);
+                console.log(`✅ Archivo verificado - Tamaño: ${stats.size} bytes`);
+            } else {
+                console.error(`❌ ERROR: El archivo no existe después de guardarlo`);
+            }
+        } catch (writeError) {
+            console.error(`❌ ERROR al escribir archivo: ${writeError.message}`);
+            throw writeError;
+        }
         
         // Responder con éxito
         res.json({
@@ -781,14 +834,31 @@ app.post('/save-and-execute', async (req, res) => {
             });
         }
         
-        // Asegurar que el nombre del archivo tenga extensión .json
-        const fileName = filename.endsWith('.json') ? filename : `${filename}.json`;
+        // Sanitizar y normalizar el nombre del archivo
+        const fileName = sanitizeFilename(filename);
         
         // 1. Guardar el archivo en EC2
         const storagePath = getStoragePath();
         const filePath = path.join(storagePath, fileName);
-        fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2));
-        console.log(`✅ Archivo guardado en EC2: ${filePath}`);
+        
+        console.log(`=== GUARDANDO Y EJECUTANDO ===`);
+        console.log(`Filename recibido: ${filename}`);
+        console.log(`Filename final (sanitizado): ${fileName}`);
+        console.log(`Ruta completa: ${filePath}`);
+        
+        try {
+            fs.writeFileSync(filePath, JSON.stringify(parsedJson, null, 2), 'utf8');
+            console.log(`✅ Archivo guardado en EC2: ${filePath}`);
+            
+            // Verificar que el archivo se guardó
+            if (fs.existsSync(filePath)) {
+                const stats = fs.statSync(filePath);
+                console.log(`✅ Archivo verificado - Tamaño: ${stats.size} bytes`);
+            }
+        } catch (writeError) {
+            console.error(`❌ ERROR al escribir archivo: ${writeError.message}`);
+            throw writeError;
+        }
         
         // 2. Ejecutar Control-M usando el archivo guardado
         const controlMResult = await executeControlMApi(ambiente, token, filename);
