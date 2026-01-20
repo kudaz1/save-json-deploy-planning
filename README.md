@@ -62,15 +62,16 @@ pm2 startup
 
 #### POST /save-json
 
-Guarda un archivo JSON en `~/Desktop/jsonControlm` dentro de la instancia EC2 (se expande a `/root/Desktop/jsonControlm` para usuario root).
+Guarda un archivo JSON en `~/Desktop/jsonControlm` dentro de la instancia EC2 (se expande a `/root/Desktop/jsonControlm` para usuario root). **Si se proporciona el campo `controlm_api`, ejecutará automáticamente la API de Control-M después de guardar el archivo.**
 
 **Parámetros del body:**
 - `ambiente` (string): Ambiente donde se ejecuta - solo permite "DEV" o "QA"
-- `token` (string): Token de autenticación/autorización para Control-M
+- `token` (string): Token de autenticación/autorización para Control-M (Bearer token)
 - `filename` (string): Nombre del archivo (sin extensión .json)
 - `jsonData` (object/string): El JSON a guardar
+- `controlm_api` (string, opcional): URL completa de la API de Control-M (ej: `https://controlms1de01:8446/automation-api/deploy`). Si se proporciona, se ejecutará automáticamente después de guardar el archivo.
 
-**Ejemplo de uso:**
+**Ejemplo de uso (solo guardar):**
 
 ```bash
 curl -X POST http://localhost:3000/save-json \
@@ -87,15 +88,56 @@ curl -X POST http://localhost:3000/save-json \
   }'
 ```
 
-**Respuesta exitosa:**
+**Ejemplo de uso (guardar y ejecutar Control-M automáticamente):**
+
+```bash
+curl -X POST http://localhost:3000/save-json \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ambiente": "DEV",
+    "token": "3DFAE7FC808867A6E321A820A026BC0C7D32BEE9201F30CA5C5375CEF863B999B6142C00868A38A0C2A3485A0BD64FBF79460A2F512328CCA88DFCB676D1A613",
+    "filename": "mi-archivo",
+    "controlm_api": "https://controlms1de01:8446/automation-api/deploy",
+    "jsonData": {
+      "nombre": "ejemplo",
+      "valor": 123,
+      "array": [1, 2, 3]
+    }
+  }'
+```
+
+**Respuesta exitosa (solo guardar):**
 ```json
 {
   "success": true,
-  "message": "Archivo guardado exitosamente en EC2",
+  "message": "Archivo guardado exitosamente",
   "filename": "mi-archivo.json",
   "filePath": "/root/Desktop/jsonControlm/mi-archivo.json",
   "storagePath": "/root/Desktop/jsonControlm",
-  "ambiente": "DEV"
+  "fileSize": 1234,
+  "ambiente": "DEV",
+  "verified": true
+}
+```
+
+**Respuesta exitosa (guardar y ejecutar Control-M):**
+```json
+{
+  "success": true,
+  "message": "Archivo guardado exitosamente y Control-M ejecutado",
+  "filename": "mi-archivo.json",
+  "filePath": "/root/Desktop/jsonControlm/mi-archivo.json",
+  "storagePath": "/root/Desktop/jsonControlm",
+  "fileSize": 1234,
+  "ambiente": "DEV",
+  "verified": true,
+  "controlMResult": {
+    "success": true,
+    "status": 200,
+    "data": { ... },
+    "filePath": "/root/Desktop/jsonControlm/mi-archivo.json",
+    "message": "API de Control-M ejecutada exitosamente"
+  }
 }
 ```
 

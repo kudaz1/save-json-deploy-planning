@@ -535,35 +535,33 @@ guardarArchivoAutomaticamente();
     return script;
 }
 
-// Función para ejecutar la API según el ambiente
+// Función para ejecutar la API de Control-M
 // Ahora lee el archivo desde la ruta de almacenamiento en EC2
-async function executeControlMApi(ambiente, token, filename) {
+async function executeControlMApi(controlmApiUrl, token, filePath) {
     try {
-        // Determinar la URL según el ambiente
-        const apiUrl = ambiente === 'DEV' 
-            ? 'https://controlms1de01:8446/automation-api/deploy'
-            : 'https://controlms2qa01:8446/automation-api/deploy';
-
-        console.log(`Ejecutando API para ambiente ${ambiente}: ${apiUrl}`);
-
-        // Obtener la ruta de almacenamiento
-        const storagePath = getStoragePath();
-        
-        // Sanitizar y normalizar el nombre del archivo (debe coincidir con el guardado)
-        const fileName = sanitizeFilename(filename);
-        const filePath = path.join(storagePath, fileName);
+        console.log(`[CONTROL-M] ========================================`);
+        console.log(`[CONTROL-M] Ejecutando API de Control-M`);
+        console.log(`[CONTROL-M] URL: ${controlmApiUrl}`);
+        console.log(`[CONTROL-M] Archivo: ${filePath}`);
+        console.log(`[CONTROL-M] Token: ${token ? token.substring(0, 20) + '...' : 'NO'}`);
         
         // Verificar que el archivo existe
         if (!fs.existsSync(filePath)) {
             throw new Error(`El archivo no existe en la ruta: ${filePath}`);
         }
         
-        console.log(`Leyendo archivo desde: ${filePath}`);
+        console.log(`[CONTROL-M] Archivo verificado que existe`);
+
+        // Obtener el nombre del archivo de la ruta
+        const fileName = path.basename(filePath);
+        console.log(`[CONTROL-M] Nombre del archivo: ${fileName}`);
         
         // Leer el archivo desde el sistema de archivos
+        console.log(`[CONTROL-M] Leyendo archivo desde: ${filePath}`);
         const fileStream = fs.createReadStream(filePath);
         
         // Crear form-data con el stream del archivo
+        console.log(`[CONTROL-M] Creando form-data...`);
         const form = new FormData();
         form.append('definitionsFile', fileStream, {
             filename: fileName,
@@ -571,42 +569,52 @@ async function executeControlMApi(ambiente, token, filename) {
         });
 
         // Configurar headers con Bearer token
+        console.log(`[CONTROL-M] Configurando headers...`);
         const config = {
             headers: {
                 ...form.getHeaders(),
                 'Authorization': `Bearer ${token}`
             },
-            timeout: 30000 // 30 segundos timeout
+            timeout: 60000 // 60 segundos timeout (aumentado para archivos grandes)
         };
 
         // Realizar la petición POST
-        const response = await axios.post(apiUrl, form, config);
+        console.log(`[CONTROL-M] Enviando petición POST a Control-M...`);
+        const response = await axios.post(controlmApiUrl, form, config);
         
-        console.log(`API ejecutada exitosamente para ambiente ${ambiente}. Status: ${response.status}`);
-        console.log(`Archivo cargado desde: ${filePath}`);
+        console.log(`[CONTROL-M] ✅ API ejecutada exitosamente`);
+        console.log(`[CONTROL-M] Status: ${response.status}`);
+        console.log(`[CONTROL-M] Response:`, JSON.stringify(response.data).substring(0, 200));
+        console.log(`[CONTROL-M] ========================================`);
         
         return {
             success: true,
             status: response.status,
             data: response.data,
             filePath: filePath,
-            message: `API ejecutada exitosamente para ambiente ${ambiente}`
+            message: `API de Control-M ejecutada exitosamente`
         };
 
     } catch (error) {
-        console.error(`Error ejecutando API para ambiente ${ambiente}:`, error.message);
+        console.error(`[CONTROL-M] ❌ Error ejecutando API de Control-M:`, error.message);
+        if (error.response) {
+            console.error(`[CONTROL-M] Status:`, error.response.status);
+            console.error(`[CONTROL-M] Data:`, error.response.data);
+        }
         
         return {
             success: false,
             error: error.message,
             status: error.response?.status || 'N/A',
-            message: `Error ejecutando API para ambiente ${ambiente}`
+            statusText: error.response?.statusText || 'N/A',
+            data: error.response?.data || null,
+            message: `Error ejecutando API de Control-M`
         };
     }
 }
 
 // Endpoint para guardar archivo JSON en EC2 - VERSIÓN DEFINITIVA Y ROBUSTA
-app.post('/save-json', (req, res) => {
+app.post('/save-json', async (req, res) => {
     console.log('\n========================================');
     console.log('=== INICIO POST /save-json ===');
     console.log('Timestamp:', new Date().toISOString());
@@ -620,13 +628,14 @@ app.post('/save-json', (req, res) => {
         console.log('[1] Content-Length:', req.headers['content-length']);
         
         // 2. Validaciones básicas
-        const { ambiente, token, filename, jsonData } = req.body;
+        const { ambiente, token, filename, jsonData, controlm_api } = req.body;
         console.log('[2] Datos extraídos:', {
             ambiente: ambiente,
             token: token ? token.substring(0, 10) + '...' : 'NO',
             filename: filename,
             hasJsonData: !!jsonData,
-            jsonDataType: typeof jsonData
+            jsonDataType: typeof jsonData,
+            controlm_api: controlm_api || 'NO (opcional)'
         });
         
         if (!ambiente || !token || !filename || !jsonData) {
@@ -640,6 +649,15 @@ app.post('/save-json', (req, res) => {
                     filename: !!filename,
                     jsonData: !!jsonData
                 }
+            });
+        }
+        
+        // controlm_api es opcional - si no se proporciona, no se ejecutará Control-M
+        if (controlm_api && !controlm_api.startsWith('http')) {
+            console.error('[2] ❌ ERROR: controlm_api debe ser una URL válida');
+            return res.status(400).json({
+                success: false,
+                error: 'El campo "controlm_api" debe ser una URL válida (ej: https://controlms1de01:8446/automation-api/deploy)'
             });
         }
         
@@ -792,17 +810,48 @@ app.post('/save-json', (req, res) => {
         console.log('Storage path:', storagePath);
         console.log('========================================\n');
         
-        // Responder con éxito - IMPORTANTE: no hacer return antes de esto
-        res.json({
+        // EJECUTAR CONTROL-M AUTOMÁTICAMENTE después de guardar
+        let controlMResult = null;
+        const controlmApiUrl = req.body.controlm_api;
+        
+        if (controlmApiUrl && token) {
+            console.log('\n========================================');
+            console.log('=== EJECUTANDO CONTROL-M AUTOMÁTICAMENTE ===');
+            console.log('========================================\n');
+            
+            try {
+                controlMResult = await executeControlMApi(controlmApiUrl, token, filePath);
+                console.log('✅ Control-M ejecutado exitosamente');
+            } catch (controlMError) {
+                console.error('❌ Error ejecutando Control-M:', controlMError.message);
+                controlMResult = {
+                    success: false,
+                    error: controlMError.message,
+                    status: controlMError.response?.status || 'N/A',
+                    message: 'Error ejecutando API de Control-M'
+                };
+            }
+        } else {
+            console.log('ℹ️ Control-M no se ejecutará (falta controlm_api o token)');
+        }
+        
+        // Responder con éxito - incluir resultado de Control-M si se ejecutó
+        const response = {
             success: true,
-            message: 'Archivo guardado exitosamente',
+            message: 'Archivo guardado exitosamente' + (controlMResult ? (controlMResult.success ? ' y Control-M ejecutado' : ' pero Control-M falló') : ''),
             filename: fileName,
             filePath: filePath,
             storagePath: storagePath,
             fileSize: finalStats.size,
             ambiente: ambiente,
             verified: true
-        });
+        };
+        
+        if (controlMResult) {
+            response.controlMResult = controlMResult;
+        }
+        
+        res.json(response);
 
     } catch (error) {
         console.error('=== ❌ ERROR ===');
