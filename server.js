@@ -1234,6 +1234,52 @@ app.get('/diagnostic', (req, res) => {
     }
 });
 
+// Endpoint para ver información de logs
+app.get('/logs', (req, res) => {
+    try {
+        const logInfo = {
+            message: 'Información sobre los logs de la API',
+            instructions: {
+                pm2: [
+                    'Ver logs en tiempo real: pm2 logs save-json-api',
+                    'Ver últimas 100 líneas: pm2 logs save-json-api --lines 100',
+                    'Logs guardados en: ~/.pm2/logs/',
+                    'Archivo output: ~/.pm2/logs/save-json-api-out.log',
+                    'Archivo errores: ~/.pm2/logs/save-json-api-error.log'
+                ],
+                direct: [
+                    'Si ejecutas con node server.js, los logs aparecen en la consola',
+                    'Ejecuta: node server.js | tee server.log para guardar en archivo'
+                ],
+                systemd: [
+                    'Ver logs: sudo journalctl -u save-json-api -f',
+                    'Últimas 100 líneas: sudo journalctl -u save-json-api -n 100'
+                ]
+            },
+            debugFiles: {
+                location: '/tmp/',
+                pattern: 'debug-*.txt',
+                command: 'ls -la /tmp/debug-*.txt 2>/dev/null || echo "No hay archivos de debug"'
+            },
+            currentProcess: {
+                pid: process.pid,
+                uptime: Math.round(process.uptime()),
+                memory: process.memoryUsage(),
+                platform: process.platform,
+                nodeVersion: process.version
+            }
+        };
+        
+        res.json(logInfo);
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: 'Error obteniendo información de logs',
+            details: error.message
+        });
+    }
+});
+
 // Endpoint de prueba
 app.get('/', (req, res) => {
     const storagePath = getStoragePath();
