@@ -28,14 +28,14 @@ curl -X POST https://save-json-deploy-planning-production.up.railway.app/save-js
     "ambiente": "DEV",
     "token": "tu-bearer-token-aqui",
     "filename": "BORRA-GUI-DESARROLLO_hold_deploy",
+    "controlm_api": "https://10.20.74.53:8446/automation-api/deploy",
     "jsonData": {
       "BORRA-GUI-DESARROLLO_hold_deploy": {
         "Type": "SimpleFolder",
         "ControlmServer": "COOPEUCH",
         "OrderMethod": "Manual"
       }
-    },
-    "controlm_api": "https://10.20.74.53:8446/automation-api/deploy"
+    }
   }'
 ```
 
@@ -55,6 +55,7 @@ curl -X POST https://save-json-deploy-planning-production.up.railway.app/save-js
   "ambiente": "DEV",
   "token": "tu-bearer-token-aqui",
   "filename": "BORRA-GUI-DESARROLLO_hold_deploy",
+  "controlm_api": "https://10.20.74.53:8446/automation-api/deploy",
   "jsonData": {
     "BORRA-GUI-DESARROLLO_hold_deploy": {
       "Type": "SimpleFolder",
@@ -75,8 +76,7 @@ curl -X POST https://save-json-deploy-planning-production.up.railway.app/save-js
         "Application": "BORRA-GUI-DESARROLLO_hold_deploy"
       }
     }
-  },
-  "controlm_api": "https://10.20.74.53:8446/automation-api/deploy"
+  }
 }
 ```
 
@@ -95,6 +95,7 @@ async function guardarYEjecutarControlM() {
       ambiente: 'DEV',
       token: 'tu-bearer-token-aqui',
       filename: 'BORRA-GUI-DESARROLLO_hold_deploy',
+      controlm_api: 'https://10.20.74.53:8446/automation-api/deploy',
       jsonData: {
         "BORRA-GUI-DESARROLLO_hold_deploy": {
           "Type": "SimpleFolder",
@@ -115,8 +116,7 @@ async function guardarYEjecutarControlM() {
             "Application": "BORRA-GUI-DESARROLLO_hold_deploy"
           }
         }
-      },
-      controlm_api: 'https://10.20.74.53:8446/automation-api/deploy'
+      }
     };
 
     console.log('🚀 Enviando request a la API...');
@@ -162,6 +162,7 @@ def guardar_y_ejecutar_controlm():
         'ambiente': 'DEV',
         'token': 'tu-bearer-token-aqui',
         'filename': 'BORRA-GUI-DESARROLLO_hold_deploy',
+        'controlm_api': 'https://10.20.74.53:8446/automation-api/deploy',
         'jsonData': {
             'BORRA-GUI-DESARROLLO_hold_deploy': {
                 'Type': 'SimpleFolder',
@@ -182,8 +183,7 @@ def guardar_y_ejecutar_controlm():
                     'Application': 'BORRA-GUI-DESARROLLO_hold_deploy'
                 }
             }
-        },
-        'controlm_api': 'https://10.20.74.53:8446/automation-api/deploy'
+        }
     }
     
     headers = {
