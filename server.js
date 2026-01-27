@@ -3,6 +3,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const https = require('https');
 const axios = require('axios');
 const FormData = require('form-data');
 const { execSync } = require('child_process');
@@ -608,11 +609,19 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
         
         const config = {
             headers: headers,
-            timeout: 60000 // 60 segundos timeout (aumentado para archivos grandes)
+            timeout: 60000, // 60 segundos timeout (aumentado para archivos grandes)
+            // Deshabilitar verificación SSL para IPs privadas o certificados autofirmados
+            httpsAgent: new https.Agent({
+                rejectUnauthorized: false
+            }),
+            // Configuración adicional para axios
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity
         };
 
         // Realizar la petición POST
         console.log(`[CONTROL-M] 🚀 Enviando petición POST a Control-M...`);
+        console.log(`[CONTROL-M] Configuración SSL: rejectUnauthorized=false (para IPs privadas)`);
         const startTime = Date.now();
         const response = await axios.post(controlmApiUrl, form, config);
         const endTime = Date.now();
@@ -888,6 +897,14 @@ app.post('/save-json', async (req, res) => {
         let controlMResult = null;
         const controlmApiUrl = req.body.controlm_api;
         
+        console.log('\n========================================');
+        console.log('=== VERIFICACIÓN CONTROL-M ===');
+        console.log('========================================');
+        console.log(`controlm_api recibido: ${controlmApiUrl || 'NO PROPORCIONADO'}`);
+        console.log(`token recibido: ${token ? 'SÍ (' + token.substring(0, 10) + '...)' : 'NO'}`);
+        console.log(`filePath: ${filePath}`);
+        console.log('========================================\n');
+        
         if (controlmApiUrl && token) {
             console.log('\n========================================');
             console.log('=== EJECUTANDO CONTROL-M AUTOMÁTICAMENTE ===');
@@ -895,9 +912,15 @@ app.post('/save-json', async (req, res) => {
             
             try {
                 controlMResult = await executeControlMApi(controlmApiUrl, token, filePath);
-                console.log('✅ Control-M ejecutado exitosamente');
+                
+                if (controlMResult.success) {
+                    console.log('✅ Control-M ejecutado exitosamente');
+                } else {
+                    console.error('❌ Control-M falló:', controlMResult.error);
+                }
             } catch (controlMError) {
-                console.error('❌ Error ejecutando Control-M:', controlMError.message);
+                console.error('❌ Error ejecutando Control-M (catch):', controlMError.message);
+                console.error('Stack:', controlMError.stack);
                 controlMResult = {
                     success: false,
                     error: controlMError.message,
@@ -906,7 +929,13 @@ app.post('/save-json', async (req, res) => {
                 };
             }
         } else {
-            console.log('ℹ️ Control-M no se ejecutará (falta controlm_api o token)');
+            console.log('ℹ️ Control-M no se ejecutará:');
+            if (!controlmApiUrl) {
+                console.log('   - Falta controlm_api');
+            }
+            if (!token) {
+                console.log('   - Falta token');
+            }
         }
         
         // Responder con éxito - incluir resultado de Control-M si se ejecutó
