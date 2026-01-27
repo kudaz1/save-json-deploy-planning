@@ -96,3 +96,11 @@ Thumbs.db
 logs
 *.log
 
+# Archivos guardados en EC2 (no subir al repositorio)
+/Desktop/
+Desktop/
+jsonControlm/
+*.json# Archivos de entorno
+.env
+.env.local
+.env.production

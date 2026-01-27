@@ -1000,13 +1000,13 @@ app.post('/download-json', async (req, res) => {
 // Endpoint para ejecutar Control-M usando archivo guardado en EC2
 app.post('/execute-controlm', async (req, res) => {
     try {
-        const { ambiente, token, filename } = req.body;
+        const { ambiente, token, filename, controlm_api } = req.body;
         
         // Validar que se proporcionen los datos requeridos
-        if (!ambiente || !token || !filename) {
+        if (!ambiente || !token || !filename || !controlm_api) {
             return res.status(400).json({
                 success: false,
-                error: 'Se requieren los campos "ambiente", "token" y "filename"'
+                error: 'Se requieren los campos "ambiente", "token", "filename" y "controlm_api"'
             });
         }
         
@@ -1018,8 +1018,33 @@ app.post('/execute-controlm', async (req, res) => {
             });
         }
         
+        // Validar que controlm_api sea una URL válida
+        if (!controlm_api.startsWith('http')) {
+            return res.status(400).json({
+                success: false,
+                error: 'El campo "controlm_api" debe ser una URL válida (ej: https://controlms1de01:8446/automation-api/deploy)'
+            });
+        }
+        
+        // Construir la ruta completa del archivo
+        const storagePath = getStoragePath();
+        let fileName = String(filename).trim();
+        if (!fileName.endsWith('.json')) {
+            fileName = fileName + '.json';
+        }
+        const filePath = path.join(storagePath, fileName);
+        
+        // Verificar que el archivo existe
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({
+                success: false,
+                error: `El archivo no existe: ${filePath}`,
+                filePath: filePath
+            });
+        }
+        
         // Ejecutar Control-M API usando el archivo guardado
-        const result = await executeControlMApi(ambiente, token, filename);
+        const result = await executeControlMApi(controlm_api, token, filePath);
         
         if (result.success) {
             res.json({
@@ -1054,7 +1079,7 @@ app.post('/execute-controlm', async (req, res) => {
 // Endpoint para guardar y ejecutar Control-M en un solo paso
 app.post('/save-and-execute', async (req, res) => {
     try {
-        const { ambiente, token, filename, jsonData } = req.body;
+        const { ambiente, token, filename, jsonData, controlm_api } = req.body;
         
         // Validar que se proporcionen los datos requeridos
         if (!ambiente || !token || !filename || !jsonData) {
@@ -1109,20 +1134,43 @@ app.post('/save-and-execute', async (req, res) => {
             throw writeError;
         }
         
-        // 2. Ejecutar Control-M usando el archivo guardado
-        const controlMResult = await executeControlMApi(ambiente, token, filename);
+        // 2. Ejecutar Control-M usando el archivo guardado (si se proporciona controlm_api)
+        let controlMResult = null;
+        if (controlm_api && controlm_api.startsWith('http')) {
+            try {
+                controlMResult = await executeControlMApi(controlm_api, token, filePath);
+                console.log('✅ Control-M ejecutado exitosamente');
+            } catch (controlMError) {
+                console.error('❌ Error ejecutando Control-M:', controlMError.message);
+                controlMResult = {
+                    success: false,
+                    error: controlMError.message,
+                    status: controlMError.response?.status || 'N/A',
+                    message: 'Error ejecutando API de Control-M'
+                };
+            }
+        } else {
+            console.log('ℹ️ Control-M no se ejecutará (falta controlm_api o no es una URL válida)');
+        }
         
-        res.json({
-            success: controlMResult.success,
-            message: controlMResult.success 
-                ? 'Archivo guardado y Control-M ejecutado exitosamente' 
-                : 'Archivo guardado pero Control-M falló',
+        const response = {
+            success: true,
+            message: controlMResult 
+                ? (controlMResult.success 
+                    ? 'Archivo guardado y Control-M ejecutado exitosamente' 
+                    : 'Archivo guardado pero Control-M falló')
+                : 'Archivo guardado exitosamente (Control-M no se ejecutó)',
             filename: fileName,
             filePath: filePath,
             storagePath: storagePath,
-            ambiente: ambiente,
-            controlMResult: controlMResult
-        });
+            ambiente: ambiente
+        };
+        
+        if (controlMResult) {
+            response.controlMResult = controlMResult;
+        }
+        
+        res.json(response);
         
     } catch (error) {
         console.error('Error en endpoint save-and-execute:', error);
