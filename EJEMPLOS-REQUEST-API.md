@@ -16,6 +16,7 @@ Este endpoint guarda el archivo JSON y **automáticamente ejecuta Control-M** si
 
 ### Campos Opcionales:
 - `controlm_api` (string): URL de la API de Control-M. Si se proporciona, ejecutará automáticamente Control-M después de guardar.
+- `script_path` (string): Ruta del script a ejecutar después de guardar (y Control-M si aplica). Debe estar dentro de la carpeta `scripts/` del proyecto (ej: `scripts/call-onpremise.js`). Soporta `.js` (Node) y `.sh` (Bash).
 
 ---
 
@@ -325,4 +326,5 @@ Si solo quieres guardar el archivo sin ejecutar Control-M, simplemente **omite e
 - El campo `controlm_api` debe ser una URL completa que empiece con `http://` o `https://`
 - El token se usa tanto para la autenticación de tu API como para la autenticación de Control-M
 - Si `controlm_api` no se proporciona, solo se guarda el archivo sin ejecutar Control-M
+- Si `script_path` se proporciona, se ejecuta el script (dentro de `scripts/`) después de guardar; útil para llamar a una API on-premise u otras tareas
 - Los archivos se guardan en el servidor (EC2/Railway), no en tu computadora local

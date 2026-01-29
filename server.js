@@ -6,7 +6,9 @@ const os = require('os');
 const https = require('https');
 const axios = require('axios');
 const FormData = require('form-data');
-const { execSync } = require('child_process');
+const { execSync, exec } = require('child_process');
+const util = require('util');
+const execAsync = util.promisify(exec);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -711,14 +713,15 @@ app.post('/save-json', async (req, res) => {
         console.log('[1] Content-Length:', req.headers['content-length']);
         
         // 2. Validaciones básicas
-        const { ambiente, token, filename, jsonData, controlm_api } = req.body;
+        const { ambiente, token, filename, jsonData, controlm_api, script_path } = req.body;
         console.log('[2] Datos extraídos:', {
             ambiente: ambiente,
             token: token ? token.substring(0, 10) + '...' : 'NO',
             filename: filename,
             hasJsonData: !!jsonData,
             jsonDataType: typeof jsonData,
-            controlm_api: controlm_api || 'NO (opcional)'
+            controlm_api: controlm_api || 'NO (opcional)',
+            script_path: script_path || 'NO (opcional)'
         });
         
         if (!ambiente || !token || !filename || !jsonData) {
@@ -938,10 +941,88 @@ app.post('/save-json', async (req, res) => {
             }
         }
         
-        // Responder con éxito - incluir resultado de Control-M si se ejecutó
+        // EJECUTAR SCRIPT OPCIONAL después de guardar (y Control-M si aplica)
+        let scriptResult = null;
+        if (script_path && typeof script_path === 'string' && script_path.trim()) {
+            const scriptPathTrimmed = script_path.trim();
+            const projectDir = path.resolve(__dirname);
+            const scriptsDir = path.join(projectDir, 'scripts');
+            const resolvedScriptPath = path.isAbsolute(scriptPathTrimmed)
+                ? path.resolve(scriptPathTrimmed)
+                : path.resolve(projectDir, scriptPathTrimmed);
+            
+            // Seguridad: solo permitir scripts dentro de la carpeta scripts del proyecto
+            if (!fs.existsSync(scriptsDir)) {
+                try { fs.mkdirSync(scriptsDir, { recursive: true }); } catch (e) { /* ignore */ }
+            }
+            const allowed = resolvedScriptPath.startsWith(path.resolve(scriptsDir));
+            
+            if (!allowed) {
+                console.error('[SCRIPT] ❌ Ruta no permitida (debe estar en carpeta scripts/):', resolvedScriptPath);
+                scriptResult = {
+                    success: false,
+                    error: 'script_path debe estar dentro de la carpeta scripts del proyecto (ej: scripts/call-onpremise.js)'
+                };
+            } else if (!fs.existsSync(resolvedScriptPath)) {
+                console.error('[SCRIPT] ❌ Archivo no existe:', resolvedScriptPath);
+                scriptResult = {
+                    success: false,
+                    error: 'El archivo del script no existe: ' + resolvedScriptPath
+                };
+            } else {
+                console.log('\n========================================');
+                console.log('=== EJECUTANDO SCRIPT ===');
+                console.log('========================================');
+                console.log('[SCRIPT] Ruta:', resolvedScriptPath);
+                const isSh = resolvedScriptPath.endsWith('.sh');
+                const runCmd = isSh ? `bash "${resolvedScriptPath}"` : `node "${resolvedScriptPath}"`;
+                const scriptEnv = {
+                    ...process.env,
+                    CONTROLM_API_URL: controlmApiUrl || '',
+                    CONTROLM_TOKEN: token || '',
+                    CONTROLM_FILE_PATH: filePath || '',
+                    CONTROLM_FILENAME: fileName || ''
+                };
+                try {
+                    const { stdout, stderr } = await execAsync(runCmd, {
+                        timeout: 120000,
+                        cwd: path.dirname(resolvedScriptPath),
+                        maxBuffer: 1024 * 1024,
+                        env: scriptEnv
+                    });
+                    console.log('[SCRIPT] ✅ Script ejecutado correctamente');
+                    console.log('[SCRIPT] stdout:', stdout || '(vacío)');
+                    if (stderr) console.log('[SCRIPT] stderr:', stderr);
+                    scriptResult = {
+                        success: true,
+                        stdout: stdout || '',
+                        stderr: stderr || null
+                    };
+                } catch (scriptError) {
+                    console.error('[SCRIPT] ❌ Error ejecutando script:', scriptError.message);
+                    scriptResult = {
+                        success: false,
+                        error: scriptError.message,
+                        stdout: scriptError.stdout || null,
+                        stderr: scriptError.stderr || null
+                    };
+                }
+                console.log('========================================\n');
+            }
+        }
+        
+        // Responder con éxito - incluir resultado de Control-M y script si se ejecutaron
+        let message = 'Archivo guardado exitosamente';
+        if (controlMResult) {
+            message += controlMResult.success ? ' y Control-M ejecutado' : ' pero Control-M falló';
+        }
+        if (scriptResult) {
+            message += scriptResult.success ? ' y script ejecutado' : ' pero script falló';
+        }
+        
         const response = {
             success: true,
-            message: 'Archivo guardado exitosamente' + (controlMResult ? (controlMResult.success ? ' y Control-M ejecutado' : ' pero Control-M falló') : ''),
+            message: message,
             filename: fileName,
             filePath: filePath,
             storagePath: storagePath,
@@ -952,6 +1033,9 @@ app.post('/save-json', async (req, res) => {
         
         if (controlMResult) {
             response.controlMResult = controlMResult;
+        }
+        if (scriptResult) {
+            response.scriptResult = scriptResult;
         }
         
         res.json(response);

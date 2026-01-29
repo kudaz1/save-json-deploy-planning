@@ -1,0 +1,2 @@
+# Carpeta para scripts que se ejecutan desde POST /save-json (campo script_path)
+# Ejemplo: script_path: "scripts/call-onpremise.js"
