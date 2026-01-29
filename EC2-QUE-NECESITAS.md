@@ -159,4 +159,12 @@ No necesitas instalar nada más (ni PHP, ni Python, ni servidor web aparte) para
 3. **Logs:**  
    `pm2 logs save-json-api` para ver peticiones, guardado de archivos, llamada a Control-M y salida del script.
 
-Si quieres, el siguiente paso puede ser un checklist tipo “paso a paso en 5 minutos” solo con los comandos a copiar/pegar en la EC2.
+Si quieres, el siguiente paso puede ser un ---
+
+## 8. Si la respuesta no incluye controlMResult ni scriptResult
+
+Si al hacer POST a `/save-json` con `controlm_api` y `token` la respuesta solo trae "Archivo guardado exitosamente en tu Escritorio", filePath en `/root/Desktop/controlm/` y no aparecen `controlMResult` ni `scriptResult`, en la EC2 está corriendo una versión antigua. Pasos: (1) `cd /apis/save-json-deploy-planning` y `git pull`; (2) `pm2 restart save-json-api`; (3) ejecutar de nuevo el curl y en otra terminal `pm2 logs save-json-api --lines 200` — debe aparecer `[VERSION] 2025-01-with-controlm-and-script`. Con la versión correcta la respuesta incluye controlMResult, scriptResult y filePath en ~/Desktop/jsonControlm/.
+
+---
+
+checklist tipo “paso a paso en 5 minutos” solo con los comandos a copiar/pegar en la EC2.

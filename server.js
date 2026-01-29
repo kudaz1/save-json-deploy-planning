@@ -83,9 +83,19 @@ app.use('/save-json', (req, res, next) => {
     });
 });
 
-// Middleware normal para otros endpoints
-app.use(express.json({ limit: '50mb', strict: false }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Middleware normal para otros endpoints (no leer body en POST /save-json: ya lo leyó el middleware anterior)
+app.use((req, res, next) => {
+    if (req.path === '/save-json' && req.method === 'POST') {
+        return next(); // body ya consumido por el middleware de /save-json
+    }
+    return express.json({ limit: '50mb', strict: false })(req, res, next);
+});
+app.use((req, res, next) => {
+    if (req.path === '/save-json' && req.method === 'POST') {
+        return next();
+    }
+    return express.urlencoded({ extended: true, limit: '50mb' })(req, res, next);
+});
 
 // Middleware para capturar errores de parsing JSON
 app.use((error, req, res, next) => {
@@ -698,10 +708,14 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
     }
 }
 
+// Versión del handler /save-json (para confirmar en EC2 que corre la versión con Control-M + script)
+const SAVE_JSON_HANDLER_VERSION = '2025-01-with-controlm-and-script';
+
 // Endpoint para guardar archivo JSON en EC2 - VERSIÓN DEFINITIVA Y ROBUSTA
 app.post('/save-json', async (req, res) => {
     console.log('\n========================================');
     console.log('=== INICIO POST /save-json ===');
+    console.log('[VERSION]', SAVE_JSON_HANDLER_VERSION);
     console.log('Timestamp:', new Date().toISOString());
     console.log('========================================\n');
     
@@ -1028,7 +1042,13 @@ app.post('/save-json', async (req, res) => {
             storagePath: storagePath,
             fileSize: finalStats.size,
             ambiente: ambiente,
-            verified: true
+            verified: true,
+            // Para ver en Postman si el servidor recibió los campos (sin exponer token)
+            received: {
+                controlm_api: !!controlmApiUrl,
+                token: !!token,
+                script_path: !!script_path
+            }
         };
         
         if (controlMResult) {
