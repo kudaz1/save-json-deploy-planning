@@ -101,14 +101,14 @@ function javaMapStringToObject(str) {
             let value;
             if (str[i] === '{') {
                 const objStart = i;
-                let depth = 0;
+                let depthCurly = 0;
                 let j = i;
                 while (j < str.length) {
                     const c = str[j];
-                    if (c === '{' || c === '[') depth++;
-                    else if (c === '}' || c === ']') depth--;
+                    if (c === '{') depthCurly++;
+                    else if (c === '}') depthCurly--;
                     j++;
-                    if (depth === 0) break;
+                    if (depthCurly === 0) break;
                 }
                 const sub = str.substring(objStart, j);
                 value = javaMapStringToObject(sub);
@@ -266,9 +266,32 @@ function convertJsonDataFromJavaMap(jsonDataString) {
 const VARIABLES_MAIL_KEYS = new Set(['Subject', 'To', 'Message', 'AttachOutput']);
 
 /**
+ * Reconstruye un valor de variable fusionado (ej: "%%TIME}, {HHt=%%SUBSTR ...").
+ * keyFirst = clave del primer valor (ej: "tm"). Devuelve array de objetos de una clave o null.
+ */
+function trySplitMergedVariableValue(keyFirst, val) {
+    if (typeof val !== 'string' || !val.includes('}, {')) return null;
+    const parts = val.split(/\}\s*,\s*\{/);
+    if (parts.length < 2) return null;
+    const out = [];
+    const firstVal = parts[0].trim();
+    if (keyFirst && firstVal) out.push({ [keyFirst]: firstVal });
+    for (let i = 1; i < parts.length; i++) {
+        const s = parts[i].trim();
+        const eq = s.indexOf('=');
+        if (eq <= 0) continue;
+        const key = s.slice(0, eq).trim();
+        const value = s.slice(eq + 1).trim();
+        if (key && !VARIABLES_MAIL_KEYS.has(key)) out.push({ [key]: value });
+    }
+    return out.length ? out : null;
+}
+
+/**
  * Convierte Variables a array de objetos de una sola clave [{ "tm": "%%TIME" }, { "HHt": "..." }, ...].
  * - Si es objeto: convierte a array de pares clave-valor.
  * - Si es array con elementos de varias claves (parser fusionó): explota y filtra claves de Mail.
+ * - Si un valor parece fusionado (contiene "}, {"), intenta dividirlo y reconstruir.
  */
 function normalizeVariablesField(value) {
     if (value === null || value === undefined) return value;
@@ -281,7 +304,14 @@ function normalizeVariablesField(value) {
                     out.push(item);
                 } else {
                     for (const key of keys) {
-                        if (!VARIABLES_MAIL_KEYS.has(key)) out.push({ [key]: item[key] });
+                        if (VARIABLES_MAIL_KEYS.has(key)) continue;
+                        const val = item[key];
+                        const split = trySplitMergedVariableValue(key, val);
+                        if (split) {
+                            out.push(...split);
+                            break;
+                        }
+                        out.push({ [key]: val });
                     }
                 }
             } else {
