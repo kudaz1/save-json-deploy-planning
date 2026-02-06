@@ -17,6 +17,18 @@ const PORT = process.env.PORT || 3000;
 let lastControlMCall = null;
 
 /**
+ * Parsea string en formato "Key=Value, Key2=Value2" (sin llaves) envolviendo en { }.
+ * Útil para valores que vienen como "Units=Minutes, Every=0".
+ */
+function parseKeyValueString(str) {
+    if (typeof str !== 'string' || !str.trim()) return null;
+    const trimmed = str.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) return javaMapStringToObject(trimmed);
+    if (trimmed.includes('=')) return javaMapStringToObject('{' + trimmed + '}');
+    return null;
+}
+
+/**
  * Convierte string en formato Java/Map (key=value, key2=value2) a objeto JSON.
  * Usado cuando Jira u otras herramientas envían jsonData en ese formato.
  * Los valores pueden contener comas; se detecta el siguiente key= para cortar.
@@ -223,6 +235,9 @@ function deepParseJavaMap(obj) {
                     arr = parseArrayString(trimmed);
                 }
                 result[k] = arr != null ? deepParseJavaMap(arr) : v;
+            } else if (trimmed.includes('=') && (trimmed.includes(',') || trimmed.includes('{'))) {
+                const parsed = parseKeyValueString(trimmed);
+                result[k] = parsed != null ? deepParseJavaMap(parsed) : v;
             } else {
                 result[k] = v;
             }
@@ -266,6 +281,41 @@ function convertJsonDataFromJavaMap(jsonDataString) {
 const VARIABLES_MAIL_KEYS = new Set(['Subject', 'To', 'Message', 'AttachOutput']);
 
 /**
+ * Normaliza el valor string de una variable (%%SUBSTR %%tm 1 2 → %%tm  1 2, etc.).
+ */
+function normalizeVariableValueString(s) {
+    if (typeof s !== 'string') return s;
+    let out = s;
+    if (out.includes('%%SUBSTR') && out.includes('%%tm')) {
+        out = out.replace(/%%tm\s+(\d+)\s+(\d+)/g, '%%tm  $1 $2');
+    }
+    return out;
+}
+
+/**
+ * Acomoda todos los elementos de Variables a la misma estructura: array de objetos
+ * con una sola clave y valor string. Filtra elementos inválidos y normaliza valores.
+ */
+function ensureVariablesStructure(arr) {
+    if (!Array.isArray(arr)) return arr;
+    const out = [];
+    for (const item of arr) {
+        if (item === null || item === undefined) continue;
+        if (typeof item === 'object' && !Array.isArray(item)) {
+            const keys = Object.keys(item).filter(k => !VARIABLES_MAIL_KEYS.has(k));
+            for (const key of keys) {
+                let val = item[key];
+                if (typeof val !== 'string') {
+                    val = val === true || val === false ? String(val) : (val != null ? String(val) : '');
+                }
+                out.push({ [key]: normalizeVariableValueString(val) });
+            }
+        }
+    }
+    return out;
+}
+
+/**
  * Reconstruye un valor de variable fusionado (ej: "%%TIME}, {HHt=%%SUBSTR ...").
  * keyFirst = clave del primer valor (ej: "tm"). Devuelve array de objetos de una clave o null.
  */
@@ -275,14 +325,14 @@ function trySplitMergedVariableValue(keyFirst, val) {
     if (parts.length < 2) return null;
     const out = [];
     const firstVal = parts[0].trim();
-    if (keyFirst && firstVal) out.push({ [keyFirst]: firstVal });
+    if (keyFirst && firstVal) out.push({ [keyFirst]: normalizeVariableValueString(firstVal) });
     for (let i = 1; i < parts.length; i++) {
         const s = parts[i].trim();
         const eq = s.indexOf('=');
         if (eq <= 0) continue;
         const key = s.slice(0, eq).trim();
         const value = s.slice(eq + 1).trim();
-        if (key && !VARIABLES_MAIL_KEYS.has(key)) out.push({ [key]: value });
+        if (key && !VARIABLES_MAIL_KEYS.has(key)) out.push({ [key]: normalizeVariableValueString(value) });
     }
     return out.length ? out : null;
 }
@@ -292,9 +342,11 @@ function trySplitMergedVariableValue(keyFirst, val) {
  * - Si es objeto: convierte a array de pares clave-valor.
  * - Si es array con elementos de varias claves (parser fusionó): explota y filtra claves de Mail.
  * - Si un valor parece fusionado (contiene "}, {"), intenta dividirlo y reconstruir.
+ * - Al final aplica ensureVariablesStructure para que todos los elementos sigan la misma estructura.
  */
 function normalizeVariablesField(value) {
     if (value === null || value === undefined) return value;
+    let arr;
     if (Array.isArray(value)) {
         const out = [];
         for (const item of value) {
@@ -318,20 +370,126 @@ function normalizeVariablesField(value) {
                 out.push(item);
             }
         }
-        return out.map(item => normalizeControlMStructure(item));
+        arr = out.map(item => normalizeControlMStructure(item));
+    } else if (typeof value === 'object') {
+        arr = Object.entries(value).map(([key, val]) => ({ [key]: val }));
+        arr = arr.map(item => normalizeControlMStructure(item));
+    } else {
+        return value;
     }
-    if (typeof value === 'object') {
-        const arr = Object.entries(value).map(([key, val]) => ({ [key]: val }));
-        return arr.map(item => normalizeControlMStructure(item));
+    return ensureVariablesStructure(arr);
+}
+
+/** Claves que son estructuras anidadas Control-M (pueden venir como string "Key=Value, ..."). */
+const CONTROL_M_NESTED_KEYS = new Set([
+    'RerunLimit', 'When', 'JobAFT', 'JobAFt', 'eventsToWaitFor',
+    'ConfirmationCalendars'
+]);
+
+function isControlMNestedKey(key) {
+    if (!key || typeof key !== 'string') return false;
+    return CONTROL_M_NESTED_KEYS.has(key) ||
+        key.startsWith('IfBase:Folder:Output') ||
+        key.startsWith('Action:') ||
+        /^Mail_\d+$/.test(key);
+}
+
+/**
+ * Acomoda RerunLimit a { Units: string, Every: string }.
+ */
+function ensureRerunLimit(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+    const Units = obj.Units != null ? String(obj.Units) : 'Minutes';
+    let Every = obj.Every != null ? obj.Every : '0';
+    if (typeof Every !== 'string' && typeof Every !== 'number') Every = String(Every);
+    return { Units, Every };
+}
+
+function toArrayOfStrings(val) {
+    if (val == null) return [];
+    if (Array.isArray(val)) return val.map(x => String(x).trim()).filter(Boolean);
+    let s = String(val).trim();
+    if (!s) return [];
+    if (s.startsWith('[') && s.endsWith(']')) s = s.slice(1, -1).trim();
+    try {
+        const parsed = JSON.parse('[' + s + ']');
+        return Array.isArray(parsed) ? parsed.map(x => String(x).trim()).filter(Boolean) : s.split(',').map(x => x.trim()).filter(Boolean);
+    } catch (_) {
+        return s.split(',').map(x => x.trim()).filter(Boolean);
     }
-    return value;
+}
+
+/**
+ * Acomoda When a { WeekDays, MonthDays, FromTime, DaysRelation, ConfirmationCalendars }.
+ */
+function ensureWhen(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+    const result = {};
+    result.WeekDays = toArrayOfStrings(obj.WeekDays);
+    if (result.WeekDays.length === 0) result.WeekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
+    result.MonthDays = toArrayOfStrings(obj.MonthDays);
+    if (result.MonthDays.length === 0) result.MonthDays = ['NONE'];
+    result.FromTime = obj.FromTime != null ? String(obj.FromTime) : '';
+    result.DaysRelation = obj.DaysRelation != null ? String(obj.DaysRelation) : 'OR';
+    if (obj.ConfirmationCalendars != null && typeof obj.ConfirmationCalendars === 'object') {
+        result.ConfirmationCalendars = normalizeControlMStructure(obj.ConfirmationCalendars);
+    } else if (obj.ConfirmationCalendars != null) {
+        result.ConfirmationCalendars = { Calendar: String(obj.ConfirmationCalendars) };
+    } else {
+        result.ConfirmationCalendars = { Calendar: 'Cal_Habil' };
+    }
+    return result;
+}
+
+/**
+ * Acomoda JobAFT a { Type: string, Quantity: number|string }.
+ */
+function ensureJobAFT(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+    const Type = obj.Type != null ? String(obj.Type) : 'Resource:Pool';
+    let Quantity = obj.Quantity != null ? obj.Quantity : 1;
+    if (typeof Quantity === 'string' && /^\d+$/.test(Quantity)) Quantity = parseInt(Quantity, 10);
+    return { Type, Quantity };
+}
+
+/**
+ * Acomoda eventsToWaitFor a { Type: "WaitForEvents", Events: [ { Event: string } ] }.
+ */
+function ensureEventsToWaitFor(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj !== 'object') return obj;
+    const Type = obj.Type != null ? String(obj.Type) : 'WaitForEvents';
+    let Events = obj.Events;
+    if (!Array.isArray(Events)) {
+        Events = (Events != null ? [Events] : []);
+    }
+    Events = Events.map(e => {
+        if (e != null && typeof e === 'object' && e.Event != null) return { Event: String(e.Event) };
+        if (typeof e === 'string') return { Event: e };
+        return { Event: String(e) };
+    });
+    return { Type, Events };
+}
+
+/**
+ * Convierte AttachOutput a boolean donde corresponda.
+ */
+function ensureAttachOutput(value) {
+    if (value === true || value === false) return value;
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return false;
 }
 
 /**
  * Normaliza el objeto para que coincida con la estructura esperada por Control-M:
- * - Variables: siempre array de objetos de una clave; objeto → array, elementos multi-clave explotados.
- * - Message: reemplaza " Atte." por "\\n\\nAtte." y " Operador" por "\\n\\nOperador".
- * - Variables con "%%tm 1 2": normaliza espacios a "%%tm  1 2" (dos espacios).
+ * - Variables: siempre array de objetos de una clave.
+ * - RerunLimit, When, JobAFT, eventsToWaitFor: estructuras bien formadas.
+ * - Message/Subject: escapes \\n\\n para Atte./Operador.
+ * - Valores string que parecen "Key=Value, ...": se parsean y normalizan.
  */
 function normalizeControlMStructure(obj) {
     if (obj === null || obj === undefined) return obj;
@@ -345,7 +503,38 @@ function normalizeControlMStructure(obj) {
             result[k] = normalizeVariablesField(v);
             continue;
         }
+        if (k === 'RerunLimit' || k === 'RerunLiimit') {
+            let val = v;
+            if (typeof val === 'string') val = parseKeyValueString(val) || val;
+            result[k === 'RerunLiimit' ? 'RerunLimit' : k] = ensureRerunLimit(normalizeControlMStructure(val));
+            continue;
+        }
+        if (k === 'When') {
+            let val = v;
+            if (typeof val === 'string') val = parseKeyValueString(val) || val;
+            result[k] = ensureWhen(normalizeControlMStructure(val));
+            continue;
+        }
+        if (k === 'JobAFT' || k === 'JobAFt') {
+            let val = v;
+            if (typeof val === 'string') val = parseKeyValueString(val) || val;
+            result['JobAFT'] = ensureJobAFT(normalizeControlMStructure(val));
+            continue;
+        }
+        if (k === 'eventsToWaitFor') {
+            let val = v;
+            if (typeof val === 'string') val = parseKeyValueString(val) || val;
+            result[k] = ensureEventsToWaitFor(normalizeControlMStructure(val));
+            continue;
+        }
         if (typeof v === 'string') {
+            if (isControlMNestedKey(k)) {
+                const parsed = parseKeyValueString(v);
+                if (parsed != null) {
+                    result[k] = normalizeControlMStructure(parsed);
+                    continue;
+                }
+            }
             let s = v;
             if (k === 'Message' || (k === 'Subject' && s.includes('%%'))) {
                 s = s.replace(/\s+%%HORA\s+Atte\./g, ' %%HORA\\n\\nAtte.');
@@ -354,9 +543,15 @@ function normalizeControlMStructure(obj) {
             if (s.includes('%%SUBSTR') && s.includes('%%tm')) {
                 s = s.replace(/%%tm\s+(\d+)\s+(\d+)/g, '%%tm  $1 $2');
             }
-            result[k] = s;
+            if (k === 'AttachOutput') {
+                result[k] = ensureAttachOutput(s);
+            } else {
+                result[k] = s;
+            }
         } else {
-            result[k] = normalizeControlMStructure(v);
+            let normalized = normalizeControlMStructure(v);
+            if (k === 'AttachOutput') normalized = ensureAttachOutput(normalized);
+            result[k] = normalized;
         }
     }
     return result;
