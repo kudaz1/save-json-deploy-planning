@@ -221,6 +221,35 @@ function deepParseJavaMap(obj) {
 }
 
 /**
+ * Convierte jsonData en formato Java/Map (string sin comillas, key=value) al objeto JSON
+ * que se guardará en archivo (formato estándar con comillas dobles al serializar).
+ * Usado por /save-json y por /convert-json-data para validar.
+ * @param {string} jsonDataString - jsonData en formato "{key=value, ...}" o JSON válido
+ * @returns {{ converted: object, jsonString: string, fromJavaMap?: boolean } | { converted: null, error: string }}
+ */
+function convertJsonDataFromJavaMap(jsonDataString) {
+    if (jsonDataString == null || typeof jsonDataString !== 'string') {
+        return { converted: null, error: 'jsonData debe ser un string' };
+    }
+    const trimmed = jsonDataString.trim();
+    if (!trimmed) return { converted: null, error: 'jsonData vacío' };
+    try {
+        try {
+            const parsed = JSON.parse(trimmed);
+            return { converted: parsed, jsonString: JSON.stringify(parsed, null, 2), fromJavaMap: false };
+        } catch (_) {
+            const javaMapObj = javaMapStringToObject(trimmed);
+            if (javaMapObj == null) return { converted: null, error: 'No se pudo convertir formato Java/Map' };
+            let converted = deepParseJavaMap(javaMapObj);
+            converted = normalizeControlMStructure(converted);
+            return { converted, jsonString: JSON.stringify(converted, null, 2), fromJavaMap: true };
+        }
+    } catch (e) {
+        return { converted: null, error: e.message };
+    }
+}
+
+/**
  * Normaliza el objeto para que coincida con la estructura esperada por Control-M:
  * - Message: reemplaza " Atte." por "\\n\\nAtte." y " Operador" por "\\n\\nOperador" (como en el JSON que funciona).
  * - Variables con "%%tm 1 2": normaliza espacios a "%%tm  1 2" (dos espacios) si se desea igual que el request manual.
@@ -1014,23 +1043,23 @@ app.post('/save-json', async (req, res) => {
         }
 
         // 3. Parsear JSON (acepta JSON estándar o formato Java/Map desde Jira)
+        // Cuando jsonData viene sin comillas (key=value), se convierte a objeto y al guardar
+        // se escribe siempre como JSON válido con comillas dobles en claves y valores.
         console.log('[3] Parseando JSON...');
         let parsedJson;
+        let convertedFromJavaMap = false;
         try {
             if (typeof jsonData === 'string') {
                 console.log('[3] jsonData es string, parseando...');
-                try {
-                    parsedJson = JSON.parse(jsonData);
-                } catch (jsonError) {
-                    const javaMapObj = javaMapStringToObject(jsonData);
-                    if (javaMapObj != null) {
-                        console.log('[3] jsonData en formato Java/Map detectado, convirtiendo...');
-                        parsedJson = deepParseJavaMap(javaMapObj);
-                        parsedJson = normalizeControlMStructure(parsedJson);
-                        console.log('[3] ✅ Convertido desde formato Java/Map (estructura normalizada)');
-                    } else {
-                        throw jsonError;
+                const result = convertJsonDataFromJavaMap(jsonData);
+                if (result.converted != null) {
+                    parsedJson = result.converted;
+                    convertedFromJavaMap = result.fromJavaMap === true;
+                    if (convertedFromJavaMap) {
+                        console.log('[3] ✅ Convertido desde formato Java/Map a JSON (comillas dobles al guardar)');
                     }
+                } else {
+                    throw new Error(result.error || 'Error convirtiendo jsonData');
                 }
             } else {
                 console.log('[3] jsonData es objeto, usando directamente');
@@ -1096,8 +1125,8 @@ app.post('/save-json', async (req, res) => {
             console.log('[6] ℹ️ jsonControlm ya existe o error (ignorado):', e.message);
         }
         
-        // 7. Preparar datos JSON
-        console.log('[7] Preparando JSON string...');
+        // 7. Preparar datos JSON (siempre en formato estándar: claves y valores entre comillas dobles)
+        console.log('[7] Preparando JSON string (formato estándar con comillas dobles)...');
         const jsonString = JSON.stringify(parsedJson, null, 2);
         console.log('[7] ✅ JSON string preparado');
         console.log('[7] Longitud:', jsonString.length, 'caracteres');
@@ -1307,7 +1336,10 @@ app.post('/save-json', async (req, res) => {
                 script_path: !!script_path
             }
         };
-        
+        if (convertedFromJavaMap) {
+            response.convertedFromJavaMap = true;
+            response.jsonDataFormat = 'Convertido desde formato Java/Map (key=value) a JSON con comillas dobles';
+        }
         if (controlMResult) {
             response.controlMResult = controlMResult;
         }
@@ -1327,6 +1359,43 @@ app.post('/save-json', async (req, res) => {
             error: 'Error al guardar el archivo',
             details: error.message,
             code: error.code
+        });
+    }
+});
+
+// Endpoint para validar conversión de jsonData (formato Java/Map → JSON con comillas dobles)
+// POST body: { "jsonData": "{GENER_NEXUS-...={Type=SimpleFolder, ...}}" }
+// Respuesta: { success, converted, jsonString, fromJavaMap } para validar que se transforma correctamente
+app.post('/convert-json-data', (req, res) => {
+    try {
+        const jsonData = req.body && (req.body.jsonData != null ? req.body.jsonData : req.body);
+        if (jsonData == null) {
+            return res.status(400).json({
+                success: false,
+                error: 'Se requiere el campo "jsonData" (string en formato Java/Map o JSON válido)'
+            });
+        }
+        const str = typeof jsonData === 'string' ? jsonData : JSON.stringify(jsonData);
+        const result = convertJsonDataFromJavaMap(str);
+        if (result.converted != null) {
+            return res.json({
+                success: true,
+                message: 'jsonData convertido a JSON con comillas dobles (formato estándar)',
+                fromJavaMap: result.fromJavaMap === true,
+                converted: result.converted,
+                jsonString: result.jsonString,
+                structureValid: typeof result.converted === 'object' && result.converted !== null && !Array.isArray(result.converted)
+            });
+        }
+        return res.status(400).json({
+            success: false,
+            error: result.error || 'No se pudo convertir jsonData'
+        });
+    } catch (error) {
+        console.error('Error en /convert-json-data:', error);
+        return res.status(500).json({
+            success: false,
+            error: error.message
         });
     }
 });
@@ -1902,7 +1971,8 @@ app.get('/', (req, res) => {
             'GET /diagnostic': 'Información de diagnóstico del sistema EC2',
             'GET /create-storage': 'Fuerza creación de carpeta de almacenamiento (debugging)',
             'GET /test-save': 'Guardar archivo de prueba para verificar que funciona',
-            'POST /save-json': 'Guarda archivo JSON en EC2 (~/Desktop/jsonControlm)',
+            'POST /save-json': 'Guarda archivo JSON en EC2 (~/Desktop/jsonControlm). Acepta jsonData en formato Java/Map (key=value) y lo convierte a JSON con comillas dobles',
+            'POST /convert-json-data': 'Valida conversión: recibe jsonData en formato Java/Map y devuelve el JSON convertido (comillas dobles) sin guardar',
             'POST /execute-controlm': 'Ejecuta Control-M usando archivo guardado en EC2',
             'POST /save-and-execute': 'Guarda archivo y ejecuta Control-M en un solo paso',
             'POST /download-json': 'Descarga archivo JSON',
