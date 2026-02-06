@@ -42,6 +42,10 @@ app.use('/save-json', (req, res, next) => {
             cleanedBody = cleanedBody.replace(/\\'\\'/g, "'");
             cleanedBody = cleanedBody.replace(/\\'/g, "'");
             
+            // Quitar caracteres de control (newline, tab, etc.) que rompen el parse cuando
+            // vienen desde Jira u otras herramientas que insertan saltos de línea en strings
+            cleanedBody = cleanedBody.replace(/[\x00-\x1f]/g, ' ');
+            
             console.log('[RAW-BODY] Body limpiado, longitud:', cleanedBody.length);
             console.log('[RAW-BODY] Intentando parsear...');
             
@@ -726,8 +730,13 @@ app.post('/save-json', async (req, res) => {
         console.log('[1] Content-Type:', req.headers['content-type']);
         console.log('[1] Content-Length:', req.headers['content-length']);
         
-        // 2. Validaciones básicas
-        const { ambiente, token, filename, jsonData, controlm_api, script_path } = req.body;
+        // 2. Validaciones básicas (trim para valores enviados desde Jira u otros con espacios)
+        let { ambiente, token, filename, jsonData, controlm_api, script_path } = req.body;
+        ambiente = ambiente != null ? String(ambiente).trim() : '';
+        token = token != null ? String(token).trim() : '';
+        filename = filename != null ? String(filename).trim() : '';
+        controlm_api = controlm_api != null ? String(controlm_api).trim() : '';
+        script_path = script_path != null ? String(script_path).trim() : '';
         console.log('[2] Datos extraídos:', {
             ambiente: ambiente,
             token: token ? token.substring(0, 10) + '...' : 'NO',
@@ -761,7 +770,8 @@ app.post('/save-json', async (req, res) => {
             });
         }
         
-        if (!['DEV', 'QA'].includes(ambiente)) {
+        const ambienteNorm = ambiente.toUpperCase();
+        if (!['DEV', 'QA'].includes(ambienteNorm)) {
             console.error('[2] ❌ ERROR: Ambiente inválido:', ambiente);
             return res.status(400).json({
                 success: false,
@@ -787,7 +797,8 @@ app.post('/save-json', async (req, res) => {
             return res.status(400).json({
                 success: false,
                 error: 'El campo jsonData debe contener un JSON válido',
-                details: error.message
+                details: error.message,
+                hint: 'jsonData debe ser un objeto JSON (claves entre comillas, dos puntos). No usar formato Java/Map (key=value). Si viene de Jira, generar el JSON correcto o enviar jsonData como objeto, no como string con formato distinto.'
             });
         }
 
