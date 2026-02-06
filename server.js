@@ -16,6 +16,129 @@ const PORT = process.env.PORT || 3000;
 // Almacenar información de la última llamada a Control-M para debugging
 let lastControlMCall = null;
 
+/**
+ * Convierte string en formato Java/Map (key=value, key2=value2) a objeto JSON.
+ * Usado cuando Jira u otras herramientas envían jsonData en ese formato.
+ * @param {string} str - String en formato {key=value, ...}
+ * @returns {object|null} Objeto o null si no se pudo convertir
+ */
+function javaMapStringToObject(str) {
+    if (typeof str !== 'string' || !str.trim()) return null;
+    str = str.trim();
+    if (str[0] !== '{' || str[str.length - 1] !== '}') return null;
+    let i = 0;
+    function skipWs() {
+        while (i < str.length && /[\s\n\r]/.test(str[i])) i++;
+    }
+    function parseObject() {
+        if (str[i] !== '{') return null;
+        i++;
+        const obj = {};
+        skipWs();
+        while (i < str.length && str[i] !== '}') {
+            skipWs();
+            const keyStart = i;
+            while (i < str.length && str[i] !== '=') i++;
+            const key = str.substring(keyStart, i).trim();
+            if (!key) break;
+            i++;
+            skipWs();
+            let value;
+            if (str[i] === '{') {
+                value = parseObject();
+            } else if (str[i] === '[') {
+                value = parseArray();
+            } else {
+                const valStart = i;
+                let depth = 0;
+                while (i < str.length) {
+                    const c = str[i];
+                    if (c === '{' || c === '[') depth++;
+                    else if (c === '}' || c === ']') depth--;
+                    else if (depth === 0 && (c === ',' || c === '}')) break;
+                    i++;
+                }
+                value = str.substring(valStart, i).trim();
+            }
+            obj[key] = value;
+            skipWs();
+            if (str[i] === ',') i++;
+        }
+        if (str[i] === '}') i++;
+        return obj;
+    }
+    function parseArray() {
+        if (str[i] !== '[') return null;
+        i++;
+        const arr = [];
+        skipWs();
+        while (i < str.length && str[i] !== ']') {
+            skipWs();
+            let value;
+            if (str[i] === '{') {
+                value = parseObject();
+            } else if (str[i] === '[') {
+                value = parseArray();
+            } else {
+                const valStart = i;
+                let depth = 0;
+                while (i < str.length) {
+                    const c = str[i];
+                    if (c === '[' || c === '{') depth++;
+                    else if (c === ']' || c === '}') depth--;
+                    else if (depth === 0 && (c === ',' || c === ']')) break;
+                    i++;
+                }
+                value = str.substring(valStart, i).trim();
+            }
+            arr.push(value);
+            skipWs();
+            if (str[i] === ',') i++;
+        }
+        if (str[i] === ']') i++;
+        return arr;
+    }
+    try {
+        return parseObject();
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
+ * Convierte recursivamente un objeto que puede tener valores string anidados
+ * en formato Java/Map a objetos/arrays reales.
+ */
+function deepParseJavaMap(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (Array.isArray(obj)) {
+        return obj.map(item => deepParseJavaMap(item));
+    }
+    if (typeof obj !== 'object') return obj;
+    const result = {};
+    for (const [k, v] of Object.entries(obj)) {
+        if (typeof v === 'string') {
+            const trimmed = v.trim();
+            if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+                const parsed = javaMapStringToObject(trimmed);
+                result[k] = parsed != null ? deepParseJavaMap(parsed) : v;
+            } else if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+                try {
+                    const arr = JSON.parse(trimmed);
+                    result[k] = deepParseJavaMap(arr);
+                } catch (_) {
+                    result[k] = v;
+                }
+            } else {
+                result[k] = v;
+            }
+        } else {
+            result[k] = deepParseJavaMap(v);
+        }
+    }
+    return result;
+}
+
 // Middleware
 app.use(cors());
 
@@ -779,13 +902,24 @@ app.post('/save-json', async (req, res) => {
             });
         }
 
-        // 3. Parsear JSON
+        // 3. Parsear JSON (acepta JSON estándar o formato Java/Map desde Jira)
         console.log('[3] Parseando JSON...');
         let parsedJson;
         try {
             if (typeof jsonData === 'string') {
                 console.log('[3] jsonData es string, parseando...');
-                parsedJson = JSON.parse(jsonData);
+                try {
+                    parsedJson = JSON.parse(jsonData);
+                } catch (jsonError) {
+                    const javaMapObj = javaMapStringToObject(jsonData);
+                    if (javaMapObj != null) {
+                        console.log('[3] jsonData en formato Java/Map detectado, convirtiendo...');
+                        parsedJson = deepParseJavaMap(javaMapObj);
+                        console.log('[3] ✅ Convertido desde formato Java/Map');
+                    } else {
+                        throw jsonError;
+                    }
+                }
             } else {
                 console.log('[3] jsonData es objeto, usando directamente');
                 parsedJson = jsonData;
@@ -796,9 +930,9 @@ app.post('/save-json', async (req, res) => {
             console.error('[3] ❌ ERROR parseando JSON:', error.message);
             return res.status(400).json({
                 success: false,
-                error: 'El campo jsonData debe contener un JSON válido',
+                error: 'El campo jsonData debe contener un JSON válido o formato Java/Map (key=value)',
                 details: error.message,
-                hint: 'jsonData debe ser un objeto JSON (claves entre comillas, dos puntos). No usar formato Java/Map (key=value). Si viene de Jira, generar el JSON correcto o enviar jsonData como objeto, no como string con formato distinto.'
+                hint: 'jsonData debe ser JSON válido o formato tipo Java/Map. Si viene de Jira y falla, revisa que no haya caracteres de control (saltos de línea) dentro de strings.'
             });
         }
 
