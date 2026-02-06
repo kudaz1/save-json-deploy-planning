@@ -54,7 +54,7 @@ function javaMapStringToObject(str) {
             if (c === '{' || c === '[') depth++;
             else if (c === '}' || c === ']') depth--;
             if (depth === 0) {
-                if (c === '}') break;
+                if (c === '}' || c === ']') break;
                 if (isNextKey()) break;
             }
             i++;
@@ -100,7 +100,20 @@ function javaMapStringToObject(str) {
             skipWs();
             let value;
             if (str[i] === '{') {
-                value = parseObject();
+                const objStart = i;
+                let depth = 0;
+                let j = i;
+                while (j < str.length) {
+                    const c = str[j];
+                    if (c === '{' || c === '[') depth++;
+                    else if (c === '}' || c === ']') depth--;
+                    j++;
+                    if (depth === 0) break;
+                }
+                const sub = str.substring(objStart, j);
+                value = javaMapStringToObject(sub);
+                if (value == null) value = parseObject();
+                else i = j;
             } else if (str[i] === '[') {
                 value = parseArray();
             } else {
@@ -249,10 +262,46 @@ function convertJsonDataFromJavaMap(jsonDataString) {
     }
 }
 
+/** Claves que pertenecen a Mail (no a Variables) al explotar un objeto mal parseado. */
+const VARIABLES_MAIL_KEYS = new Set(['Subject', 'To', 'Message', 'AttachOutput']);
+
+/**
+ * Convierte Variables a array de objetos de una sola clave [{ "tm": "%%TIME" }, { "HHt": "..." }, ...].
+ * - Si es objeto: convierte a array de pares clave-valor.
+ * - Si es array con elementos de varias claves (parser fusionó): explota y filtra claves de Mail.
+ */
+function normalizeVariablesField(value) {
+    if (value === null || value === undefined) return value;
+    if (Array.isArray(value)) {
+        const out = [];
+        for (const item of value) {
+            if (item !== null && typeof item === 'object' && !Array.isArray(item)) {
+                const keys = Object.keys(item);
+                if (keys.length <= 1) {
+                    out.push(item);
+                } else {
+                    for (const key of keys) {
+                        if (!VARIABLES_MAIL_KEYS.has(key)) out.push({ [key]: item[key] });
+                    }
+                }
+            } else {
+                out.push(item);
+            }
+        }
+        return out.map(item => normalizeControlMStructure(item));
+    }
+    if (typeof value === 'object') {
+        const arr = Object.entries(value).map(([key, val]) => ({ [key]: val }));
+        return arr.map(item => normalizeControlMStructure(item));
+    }
+    return value;
+}
+
 /**
  * Normaliza el objeto para que coincida con la estructura esperada por Control-M:
- * - Message: reemplaza " Atte." por "\\n\\nAtte." y " Operador" por "\\n\\nOperador" (como en el JSON que funciona).
- * - Variables con "%%tm 1 2": normaliza espacios a "%%tm  1 2" (dos espacios) si se desea igual que el request manual.
+ * - Variables: siempre array de objetos de una clave; objeto → array, elementos multi-clave explotados.
+ * - Message: reemplaza " Atte." por "\\n\\nAtte." y " Operador" por "\\n\\nOperador".
+ * - Variables con "%%tm 1 2": normaliza espacios a "%%tm  1 2" (dos espacios).
  */
 function normalizeControlMStructure(obj) {
     if (obj === null || obj === undefined) return obj;
@@ -262,6 +311,10 @@ function normalizeControlMStructure(obj) {
     if (typeof obj !== 'object') return obj;
     const result = {};
     for (const [k, v] of Object.entries(obj)) {
+        if (k === 'Variables') {
+            result[k] = normalizeVariablesField(v);
+            continue;
+        }
         if (typeof v === 'string') {
             let s = v;
             if (k === 'Message' || (k === 'Subject' && s.includes('%%'))) {
