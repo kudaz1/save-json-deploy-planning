@@ -66,12 +66,12 @@ function javaMapStringToObject(str) {
         let depth = 0;
         while (i < str.length) {
             const c = str[i];
-            if (c === '{' || c === '[') depth++;
-            else if (c === '}' || c === ']') depth--;
             if (depth === 0) {
                 if (CLOSE_BRACKET.test(c)) break;
                 if (isNextKey()) break;
             }
+            if (c === '{' || c === '[') depth++;
+            else if (c === '}' || c === ']') depth--;
             i++;
         }
         return str.substring(start, i).trim();
@@ -81,22 +81,55 @@ function javaMapStringToObject(str) {
         return pos < str.length && (str[pos] === '}' || str[pos] === '\uFF5D');
     }
 
-    function parseObject() {
+    function parseObject(depth) {
+        if (depth === undefined) depth = 0;
         if (str[i] !== '{') return null;
         i++;
         const obj = {};
-        skipWs();
-        while (i < str.length && !isCloseCurly(i)) {
+        while (true) {
             skipWs();
+            if (str[i] === ',') { i++; skipWs(); }
+            if (isCloseCurly(i)) {
+                i++;
+                skipWs();
+                // Si hay "}}, " y la siguiente clave es de nivel job (JobAFT, IfBase:Folder:Output_*, eventsToWaitFor), seguir leyendo.
+                if (isCloseCurly(i)) {
+                    const savedI = i;
+                    i++;
+                    skipWs();
+                    if (str[i] === ',') { i++; skipWs(); }
+                    const keyStart = i;
+                    while (i < str.length && str[i] !== '=') i++;
+                    const nextKey = str.substring(keyStart, i).trim();
+                    i = savedI;
+                    const isJobLevelKey = nextKey === 'JobAFT' || (nextKey && nextKey.startsWith('IfBase:Folder:Output_')) || nextKey === 'eventsToWaitFor';
+                    const looksLikeCC1040P2 = obj.RerunLimit != null && obj.When != null;
+                    if ((depth === 1 || looksLikeCC1040P2) && isJobLevelKey) {
+                        i++;
+                        skipWs();
+                        if (str[i] === ',') i++;
+                        continue;
+                    }
+                }
+                if (depth === 1 && str[i] === ',') {
+                    i++;
+                    continue;
+                }
+                return obj;
+            }
             const keyStart = i;
             while (i < str.length && str[i] !== '=') i++;
             const key = str.substring(keyStart, i).trim();
-            if (!key) break;
+            if (!key) {
+                if (isCloseCurly(i)) i++;
+                return obj;
+            }
             i++;
             skipWs();
             let value;
             if (str[i] === '{' || str[i] === '\uFF5D') {
-                value = parseObject();
+                const nextDepth = (key === 'CC1040P2') ? 1 : depth + 1;
+                value = parseObject(nextDepth);
             } else if (str[i] === '[' || str[i] === '\uFF3D') {
                 value = parseArray();
             } else {
@@ -106,7 +139,6 @@ function javaMapStringToObject(str) {
             skipWs();
             if (str[i] === ',') i++;
         }
-        if (isCloseCurly(i)) i++;
         return obj;
     }
 
@@ -2307,6 +2339,12 @@ app.get('/', (req, res) => {
         }
     });
 });
+
+// Exportar conversión para tests (solo cuando se requiere el módulo, no cuando se ejecuta node server.js)
+if (require.main !== module) {
+    module.exports = { convertJsonDataFromJavaMap };
+    return;
+}
 
 // Iniciar servidor
 app.listen(PORT, () => {
