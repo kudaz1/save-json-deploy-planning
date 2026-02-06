@@ -57,6 +57,9 @@ function javaMapStringToObject(str) {
         return str[j] === '=';
     }
 
+    /** Cierra valor: } ] o equivalentes fullwidth (evita que encoding/copy-paste rompa el parse). */
+    const CLOSE_BRACKET = /[}\]\uFF5D\uFF09\uFF3D]/;
+
     /** Lee un valor string hasta ", KeyName=" o "}" (mismo nivel). No consume la coma. */
     function readStringValue() {
         const start = i;
@@ -66,7 +69,7 @@ function javaMapStringToObject(str) {
             if (c === '{' || c === '[') depth++;
             else if (c === '}' || c === ']') depth--;
             if (depth === 0) {
-                if (c === '}' || c === ']') break;
+                if (CLOSE_BRACKET.test(c)) break;
                 if (isNextKey()) break;
             }
             i++;
@@ -74,12 +77,16 @@ function javaMapStringToObject(str) {
         return str.substring(start, i).trim();
     }
 
+    function isCloseCurly(pos) {
+        return pos < str.length && (str[pos] === '}' || str[pos] === '\uFF5D');
+    }
+
     function parseObject() {
         if (str[i] !== '{') return null;
         i++;
         const obj = {};
         skipWs();
-        while (i < str.length && str[i] !== '}') {
+        while (i < str.length && !isCloseCurly(i)) {
             skipWs();
             const keyStart = i;
             while (i < str.length && str[i] !== '=') i++;
@@ -88,9 +95,9 @@ function javaMapStringToObject(str) {
             i++;
             skipWs();
             let value;
-            if (str[i] === '{') {
+            if (str[i] === '{' || str[i] === '\uFF5D') {
                 value = parseObject();
-            } else if (str[i] === '[') {
+            } else if (str[i] === '[' || str[i] === '\uFF3D') {
                 value = parseArray();
             } else {
                 value = readStringValue();
@@ -99,7 +106,7 @@ function javaMapStringToObject(str) {
             skipWs();
             if (str[i] === ',') i++;
         }
-        if (str[i] === '}') i++;
+        if (isCloseCurly(i)) i++;
         return obj;
     }
 
@@ -398,7 +405,7 @@ function isControlMNestedKey(key) {
 
 /**
  * Acomoda RerunLimit a { Units: string, Every: string }.
- * Every siempre string; si viene como objeto (parseo erróneo) se usa "0".
+ * Every siempre string; quita llaves/sobrantes si el parseo incluyó "0}}}}".
  */
 function ensureRerunLimit(obj) {
     if (obj === null || obj === undefined) return obj;
@@ -406,8 +413,11 @@ function ensureRerunLimit(obj) {
     const Units = obj.Units != null && typeof obj.Units !== 'object' ? String(obj.Units) : 'Minutes';
     let Every = obj.Every;
     if (Every == null || typeof Every === 'object') Every = '0';
-    else if (typeof Every !== 'string' && typeof Every !== 'number') Every = '0';
-    else Every = String(Every);
+    else {
+        Every = String(Every).trim();
+        Every = Every.replace(/[}\],\s]+$/, '').trim();
+        if (!Every || /[}\]]/.test(Every)) Every = '0';
+    }
     return { Units, Every };
 }
 
