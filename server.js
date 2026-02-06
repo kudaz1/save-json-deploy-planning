@@ -19,6 +19,7 @@ let lastControlMCall = null;
 /**
  * Convierte string en formato Java/Map (key=value, key2=value2) a objeto JSON.
  * Usado cuando Jira u otras herramientas envían jsonData en ese formato.
+ * Los valores pueden contener comas; se detecta el siguiente key= para cortar.
  * @param {string} str - String en formato {key=value, ...}
  * @returns {object|null} Objeto o null si no se pudo convertir
  */
@@ -27,9 +28,40 @@ function javaMapStringToObject(str) {
     str = str.trim();
     if (str[0] !== '{' || str[str.length - 1] !== '}') return null;
     let i = 0;
+    const keyChar = /[a-zA-Z0-9_:.-]/;
+
     function skipWs() {
         while (i < str.length && /[\s\n\r]/.test(str[i])) i++;
     }
+
+    /** Devuelve true si desde i hay ", KeyName=" (siguiente par key=value). */
+    function isNextKey() {
+        let j = i;
+        if (str[j] !== ',') return false;
+        j++;
+        while (j < str.length && /[\s\n\r]/.test(str[j])) j++;
+        if (!keyChar.test(str[j])) return false;
+        while (j < str.length && keyChar.test(str[j])) j++;
+        return str[j] === '=';
+    }
+
+    /** Lee un valor string hasta ", KeyName=" o "}" (mismo nivel). No consume la coma. */
+    function readStringValue() {
+        const start = i;
+        let depth = 0;
+        while (i < str.length) {
+            const c = str[i];
+            if (c === '{' || c === '[') depth++;
+            else if (c === '}' || c === ']') depth--;
+            if (depth === 0) {
+                if (c === '}') break;
+                if (isNextKey()) break;
+            }
+            i++;
+        }
+        return str.substring(start, i).trim();
+    }
+
     function parseObject() {
         if (str[i] !== '{') return null;
         i++;
@@ -49,16 +81,7 @@ function javaMapStringToObject(str) {
             } else if (str[i] === '[') {
                 value = parseArray();
             } else {
-                const valStart = i;
-                let depth = 0;
-                while (i < str.length) {
-                    const c = str[i];
-                    if (c === '{' || c === '[') depth++;
-                    else if (c === '}' || c === ']') depth--;
-                    else if (depth === 0 && (c === ',' || c === '}')) break;
-                    i++;
-                }
-                value = str.substring(valStart, i).trim();
+                value = readStringValue();
             }
             obj[key] = value;
             skipWs();
@@ -67,6 +90,7 @@ function javaMapStringToObject(str) {
         if (str[i] === '}') i++;
         return obj;
     }
+
     function parseArray() {
         if (str[i] !== '[') return null;
         i++;
@@ -98,6 +122,7 @@ function javaMapStringToObject(str) {
         if (str[i] === ']') i++;
         return arr;
     }
+
     try {
         return parseObject();
     } catch (e) {
@@ -107,7 +132,7 @@ function javaMapStringToObject(str) {
 
 /**
  * Convierte recursivamente un objeto que puede tener valores string anidados
- * en formato Java/Map a objetos/arrays reales.
+ * en formato Java/Map a objetos/arrays reales. Normaliza "true"/"false" a booleanos.
  */
 function deepParseJavaMap(obj) {
     if (obj === null || obj === undefined) return obj;
@@ -119,7 +144,11 @@ function deepParseJavaMap(obj) {
     for (const [k, v] of Object.entries(obj)) {
         if (typeof v === 'string') {
             const trimmed = v.trim();
-            if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            if (trimmed === 'true') {
+                result[k] = true;
+            } else if (trimmed === 'false') {
+                result[k] = false;
+            } else if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
                 const parsed = javaMapStringToObject(trimmed);
                 result[k] = parsed != null ? deepParseJavaMap(parsed) : v;
             } else if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
