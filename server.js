@@ -131,8 +131,59 @@ function javaMapStringToObject(str) {
 }
 
 /**
+ * Parsea un string que es un array en formato Java/Map: [{key=val}, {x=y}]
+ * o [MON, TUE, WED]. Devuelve array de objetos o strings.
+ */
+function parseArrayString(str) {
+    if (typeof str !== 'string' || !str.trim()) return null;
+    str = str.trim();
+    if (str[0] !== '[' || str[str.length - 1] !== ']') return null;
+    const items = [];
+    let i = 1;
+    function skipWs() {
+        while (i < str.length && /[\s\n\r]/.test(str[i])) i++;
+    }
+    while (i < str.length && str[i] !== ']') {
+        skipWs();
+        if (str[i] === '{') {
+            let depth = 0;
+            const start = i;
+            while (i < str.length) {
+                if (str[i] === '{') depth++;
+                else if (str[i] === '}') depth--;
+                i++;
+                if (depth === 0) break;
+            }
+            const sub = str.substring(start, i);
+            const parsed = javaMapStringToObject(sub);
+            items.push(parsed != null ? parsed : sub);
+        } else if (str[i] === '[') {
+            let depth = 0;
+            const start = i;
+            while (i < str.length) {
+                if (str[i] === '[') depth++;
+                else if (str[i] === ']') depth--;
+                i++;
+                if (depth === 0) break;
+            }
+            const sub = str.substring(start, i);
+            const arr = parseArrayString(sub);
+            items.push(arr != null ? arr : sub);
+        } else {
+            const start = i;
+            while (i < str.length && str[i] !== ',' && str[i] !== ']') i++;
+            items.push(str.substring(start, i).trim());
+        }
+        skipWs();
+        if (str[i] === ',') i++;
+    }
+    return items;
+}
+
+/**
  * Convierte recursivamente un objeto que puede tener valores string anidados
  * en formato Java/Map a objetos/arrays reales. Normaliza "true"/"false" a booleanos.
+ * Parsea arrays en formato Java/Map cuando JSON.parse falla.
  */
 function deepParseJavaMap(obj) {
     if (obj === null || obj === undefined) return obj;
@@ -152,17 +203,48 @@ function deepParseJavaMap(obj) {
                 const parsed = javaMapStringToObject(trimmed);
                 result[k] = parsed != null ? deepParseJavaMap(parsed) : v;
             } else if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+                let arr = null;
                 try {
-                    const arr = JSON.parse(trimmed);
-                    result[k] = deepParseJavaMap(arr);
+                    arr = JSON.parse(trimmed);
                 } catch (_) {
-                    result[k] = v;
+                    arr = parseArrayString(trimmed);
                 }
+                result[k] = arr != null ? deepParseJavaMap(arr) : v;
             } else {
                 result[k] = v;
             }
         } else {
             result[k] = deepParseJavaMap(v);
+        }
+    }
+    return result;
+}
+
+/**
+ * Normaliza el objeto para que coincida con la estructura esperada por Control-M:
+ * - Message: reemplaza " Atte." por "\\n\\nAtte." y " Operador" por "\\n\\nOperador" (como en el JSON que funciona).
+ * - Variables con "%%tm 1 2": normaliza espacios a "%%tm  1 2" (dos espacios) si se desea igual que el request manual.
+ */
+function normalizeControlMStructure(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (Array.isArray(obj)) {
+        return obj.map(item => normalizeControlMStructure(item));
+    }
+    if (typeof obj !== 'object') return obj;
+    const result = {};
+    for (const [k, v] of Object.entries(obj)) {
+        if (typeof v === 'string') {
+            let s = v;
+            if (k === 'Message' || (k === 'Subject' && s.includes('%%'))) {
+                s = s.replace(/\s+%%HORA\s+Atte\./g, ' %%HORA\\n\\nAtte.');
+                s = s.replace(/\s+Atte\.\s+Operador/g, '\\n\\nAtte.\\n\\nOperador');
+            }
+            if (s.includes('%%SUBSTR') && s.includes('%%tm')) {
+                s = s.replace(/%%tm\s+(\d+)\s+(\d+)/g, '%%tm  $1 $2');
+            }
+            result[k] = s;
+        } else {
+            result[k] = normalizeControlMStructure(v);
         }
     }
     return result;
@@ -944,7 +1026,8 @@ app.post('/save-json', async (req, res) => {
                     if (javaMapObj != null) {
                         console.log('[3] jsonData en formato Java/Map detectado, convirtiendo...');
                         parsedJson = deepParseJavaMap(javaMapObj);
-                        console.log('[3] ✅ Convertido desde formato Java/Map');
+                        parsedJson = normalizeControlMStructure(parsedJson);
+                        console.log('[3] ✅ Convertido desde formato Java/Map (estructura normalizada)');
                     } else {
                         throw jsonError;
                     }
