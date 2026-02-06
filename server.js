@@ -282,10 +282,12 @@ const VARIABLES_MAIL_KEYS = new Set(['Subject', 'To', 'Message', 'AttachOutput']
 
 /**
  * Normaliza el valor string de una variable (%%SUBSTR %%tm 1 2 → %%tm  1 2, etc.).
+ * Quita una llave '}' final si sobró del parseo Java/Map (ej: "%%TIME}" → "%%TIME").
  */
 function normalizeVariableValueString(s) {
     if (typeof s !== 'string') return s;
-    let out = s;
+    let out = s.trim();
+    if (out.endsWith('}') && !out.includes('{')) out = out.slice(0, -1).trim();
     if (out.includes('%%SUBSTR') && out.includes('%%tm')) {
         out = out.replace(/%%tm\s+(\d+)\s+(\d+)/g, '%%tm  $1 $2');
     }
@@ -396,25 +398,29 @@ function isControlMNestedKey(key) {
 
 /**
  * Acomoda RerunLimit a { Units: string, Every: string }.
+ * Every siempre string; si viene como objeto (parseo erróneo) se usa "0".
  */
 function ensureRerunLimit(obj) {
     if (obj === null || obj === undefined) return obj;
     if (typeof obj !== 'object') return obj;
-    const Units = obj.Units != null ? String(obj.Units) : 'Minutes';
-    let Every = obj.Every != null ? obj.Every : '0';
-    if (typeof Every !== 'string' && typeof Every !== 'number') Every = String(Every);
+    const Units = obj.Units != null && typeof obj.Units !== 'object' ? String(obj.Units) : 'Minutes';
+    let Every = obj.Every;
+    if (Every == null || typeof Every === 'object') Every = '0';
+    else if (typeof Every !== 'string' && typeof Every !== 'number') Every = '0';
+    else Every = String(Every);
     return { Units, Every };
 }
 
 function toArrayOfStrings(val) {
     if (val == null) return [];
-    if (Array.isArray(val)) return val.map(x => String(x).trim()).filter(Boolean);
+    if (typeof val === 'object' && !Array.isArray(val)) return [];
+    if (Array.isArray(val)) return val.map(x => (x != null && typeof x !== 'object' ? String(x).trim() : '')).filter(Boolean);
     let s = String(val).trim();
     if (!s) return [];
     if (s.startsWith('[') && s.endsWith(']')) s = s.slice(1, -1).trim();
     try {
         const parsed = JSON.parse('[' + s + ']');
-        return Array.isArray(parsed) ? parsed.map(x => String(x).trim()).filter(Boolean) : s.split(',').map(x => x.trim()).filter(Boolean);
+        return Array.isArray(parsed) ? parsed.map(x => (x != null && typeof x !== 'object' ? String(x).trim() : '')).filter(Boolean) : s.split(',').map(x => x.trim()).filter(Boolean);
     } catch (_) {
         return s.split(',').map(x => x.trim()).filter(Boolean);
     }
@@ -431,9 +437,9 @@ function ensureWhen(obj) {
     if (result.WeekDays.length === 0) result.WeekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
     result.MonthDays = toArrayOfStrings(obj.MonthDays);
     if (result.MonthDays.length === 0) result.MonthDays = ['NONE'];
-    result.FromTime = obj.FromTime != null ? String(obj.FromTime) : '';
-    result.DaysRelation = obj.DaysRelation != null ? String(obj.DaysRelation) : 'OR';
-    if (obj.ConfirmationCalendars != null && typeof obj.ConfirmationCalendars === 'object') {
+    result.FromTime = (obj.FromTime != null && typeof obj.FromTime !== 'object') ? String(obj.FromTime) : '2000';
+    result.DaysRelation = (obj.DaysRelation != null && typeof obj.DaysRelation !== 'object') ? String(obj.DaysRelation) : 'OR';
+    if (obj.ConfirmationCalendars != null && typeof obj.ConfirmationCalendars === 'object' && !Array.isArray(obj.ConfirmationCalendars)) {
         result.ConfirmationCalendars = normalizeControlMStructure(obj.ConfirmationCalendars);
     } else if (obj.ConfirmationCalendars != null) {
         result.ConfirmationCalendars = { Calendar: String(obj.ConfirmationCalendars) };
@@ -444,14 +450,16 @@ function ensureWhen(obj) {
 }
 
 /**
- * Acomoda JobAFT a { Type: string, Quantity: number|string }.
+ * Acomoda JobAFT a { Type: string, Quantity: string } (Quantity como string para JSON Control-M).
+ * Evita "[object Object]" si Quantity viene como objeto.
  */
 function ensureJobAFT(obj) {
     if (obj === null || obj === undefined) return obj;
     if (typeof obj !== 'object') return obj;
-    const Type = obj.Type != null ? String(obj.Type) : 'Resource:Pool';
-    let Quantity = obj.Quantity != null ? obj.Quantity : 1;
-    if (typeof Quantity === 'string' && /^\d+$/.test(Quantity)) Quantity = parseInt(Quantity, 10);
+    const Type = obj.Type != null && typeof obj.Type !== 'object' ? String(obj.Type) : 'Resource:Pool';
+    let Quantity = obj.Quantity;
+    if (Quantity == null || typeof Quantity === 'object') Quantity = '1';
+    else Quantity = String(Quantity);
     return { Type, Quantity };
 }
 
