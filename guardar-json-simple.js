@@ -36,22 +36,22 @@ async function guardarJson() {
             ? path.join(os.homedir(), 'OneDrive', 'Escritorio')
             : path.join(os.homedir(), 'Desktop');
         
-        const controlMPath = path.join(desktopPath, 'controlm');
-        if (!fs.existsSync(controlMPath)) {
-            fs.mkdirSync(controlMPath, { recursive: true });
+        const storagePath = path.join(desktopPath, 'jsonControlm');
+        if (!fs.existsSync(storagePath)) {
+            fs.mkdirSync(storagePath, { recursive: true });
         }
         
         // 4. Guardar el archivo con el nombre que especificaste
-        const filePath = path.join(controlMPath, filename);
+        const filePath = path.join(storagePath, filename);
         fs.writeFileSync(filePath, JSON.stringify(jsonContent, null, 2));
         
         console.log(`\n✅ Archivo guardado: ${filePath}`);
         console.log(`📏 Tamaño: ${fs.statSync(filePath).size} bytes`);
-        console.log(`\n🎉 ¡LISTO! El archivo "${filename}" está en tu Escritorio/controlm\n`);
+        console.log(`\n🎉 ¡LISTO! El archivo "${filename}" está en tu Escritorio/jsonControlm\n`);
         
         // Abrir carpeta
         if (process.platform === 'win32') {
-            require('child_process').exec(`explorer "${controlMPath}"`);
+            require('child_process').exec(`explorer "${storagePath}"`);
         }
         
     } catch (error) {

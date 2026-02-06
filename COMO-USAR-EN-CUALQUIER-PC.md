@@ -38,14 +38,14 @@ node guardar-archivo-cualquier-pc.js
 
 ### 4. Verificar el Resultado
 - ✅ El script mostrará mensajes de progreso
-- ✅ El archivo se guardará en `Escritorio/controlm/`
+- ✅ El archivo se guardará en `Escritorio/jsonControlm/`
 - ✅ Se abrirá automáticamente la carpeta (en Windows)
 
 ## 📁 Ubicación de los Archivos
 
 Los archivos se guardarán en:
-- **OneDrive**: `C:\Users\[usuario]\OneDrive\Escritorio\controlm\`
-- **Sistema**: `C:\Users\[usuario]\Desktop\controlm\`
+- **OneDrive**: `C:\Users\[usuario]\OneDrive\Escritorio\jsonControlm\`
+- **Sistema**: `C:\Users\[usuario]\Desktop\jsonControlm\`
 
 ## 🔧 Solución de Problemas
 
@@ -70,7 +70,7 @@ Los archivos se guardarán en:
 Para verificar que funciona:
 1. Ejecuta el script
 2. Verifica que aparezca "ARCHIVO GUARDADO EXITOSAMENTE"
-3. Navega a la carpeta controlm en tu Escritorio
+3. Navega a la carpeta jsonControlm en tu Escritorio
 4. Verifica que el archivo JSON esté ahí
 
 ## 📞 Soporte

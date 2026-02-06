@@ -45,15 +45,15 @@ async function guardarArchivoAutomatico() {
         const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Escritorio');
         const systemPath = path.join(os.homedir(), 'Desktop');
         const desktopPath = fs.existsSync(oneDrivePath) ? oneDrivePath : systemPath;
-        const controlMPath = path.join(desktopPath, 'controlm');
+        const storagePath = path.join(desktopPath, 'jsonControlm');
         
         console.log(`📁 Escritorio detectado: ${desktopPath}`);
-        console.log(`📂 Carpeta controlm: ${controlMPath}\n`);
+        console.log(`📂 Carpeta de almacenamiento: ${storagePath}\n`);
         
         // Crear carpeta si no existe
-        if (!fs.existsSync(controlMPath)) {
-            fs.mkdirSync(controlMPath, { recursive: true });
-            console.log(`✅ Carpeta creada: ${controlMPath}`);
+        if (!fs.existsSync(storagePath)) {
+            fs.mkdirSync(storagePath, { recursive: true });
+            console.log(`✅ Carpeta creada: ${storagePath}`);
         }
         
         // 1. Llamar a la API
@@ -85,7 +85,7 @@ async function guardarArchivoAutomatico() {
         
         // 3. Guardar el archivo
         const fileName = filename.endsWith('.json') ? filename : `${filename}.json`;
-        const filePath = path.join(controlMPath, fileName);
+        const filePath = path.join(storagePath, fileName);
         
         fs.writeFileSync(filePath, JSON.stringify(jsonContent, null, 2));
         
@@ -102,7 +102,7 @@ async function guardarArchivoAutomatico() {
         
         // Abrir carpeta en explorador (Windows)
         if (process.platform === 'win32') {
-            require('child_process').exec(`explorer "${controlMPath}"`);
+            require('child_process').exec(`explorer "${storagePath}"`);
             console.log('📂 Abriendo carpeta en el explorador...');
         }
         

@@ -31,11 +31,11 @@ async function descargarYGuardar() {
         const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Escritorio');
         const systemPath = path.join(os.homedir(), 'Desktop');
         const desktopPath = fs.existsSync(oneDrivePath) ? oneDrivePath : systemPath;
-        const controlMPath = path.join(desktopPath, 'controlm');
+        const storagePath = path.join(desktopPath, 'jsonControlm');
         
         // Crear carpeta si no existe
-        if (!fs.existsSync(controlMPath)) {
-            fs.mkdirSync(controlMPath, { recursive: true });
+        if (!fs.existsSync(storagePath)) {
+            fs.mkdirSync(storagePath, { recursive: true });
         }
         
         // 1. Llamar al endpoint de descarga
@@ -52,17 +52,17 @@ async function descargarYGuardar() {
         
         // 2. Guardar el archivo
         const fileName = CONFIG.filename.endsWith('.json') ? CONFIG.filename : `${CONFIG.filename}.json`;
-        const filePath = path.join(controlMPath, fileName);
+        const filePath = path.join(storagePath, fileName);
         
         fs.writeFileSync(filePath, Buffer.from(response.data));
         
         console.log(`✅ Archivo guardado: ${filePath}`);
         console.log(`📏 Tamaño: ${response.data.length} bytes\n`);
-        console.log('🎉 ¡LISTO! El archivo está en tu Escritorio/controlm\n');
+        console.log('🎉 ¡LISTO! El archivo está en tu Escritorio/jsonControlm\n');
         
         // Abrir carpeta en explorador (Windows)
         if (process.platform === 'win32') {
-            require('child_process').exec(`explorer "${controlMPath}"`);
+            require('child_process').exec(`explorer "${storagePath}"`);
             console.log('📂 Abriendo carpeta...');
         }
         

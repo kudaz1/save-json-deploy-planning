@@ -86,24 +86,24 @@ async function guardarArchivoEnEstaComputadora() {
             console.log('📁 Usando Desktop del sistema');
         }
         
-        const controlMPath = path.join(desktopPath, 'controlm');
+        const storagePath = path.join(desktopPath, 'jsonControlm');
         
         console.log(`\n=== GUARDANDO EN ESTA COMPUTADORA ===`);
         console.log(`👤 Usuario: ${os.userInfo().username}`);
         console.log(`🏠 Directorio home: ${os.homedir()}`);
         console.log(`📁 Ruta del Escritorio: ${desktopPath}`);
-        console.log(`📁 Ruta de controlm: ${controlMPath}`);
+        console.log(`📁 Ruta de almacenamiento: ${storagePath}`);
         
-        // Crear carpeta controlm si no existe
-        if (!fs.existsSync(controlMPath)) {
-            fs.mkdirSync(controlMPath, { recursive: true });
-            console.log(`✅ Carpeta controlm creada: ${controlMPath}`);
+        // Crear carpeta jsonControlm si no existe
+        if (!fs.existsSync(storagePath)) {
+            fs.mkdirSync(storagePath, { recursive: true });
+            console.log(`✅ Carpeta jsonControlm creada: ${storagePath}`);
         } else {
-            console.log(`ℹ️ Carpeta controlm ya existe: ${controlMPath}`);
+            console.log(`ℹ️ Carpeta jsonControlm ya existe: ${storagePath}`);
         }
         
         // Ruta completa del archivo
-        const filePath = path.join(controlMPath, filename);
+        const filePath = path.join(storagePath, filename);
         
         // Guardar el archivo JSON
         fs.writeFileSync(filePath, JSON.stringify(jsonContent, null, 2));
@@ -119,14 +119,14 @@ async function guardarArchivoEnEstaComputadora() {
         console.log('\n🎉 ¡ARCHIVO GUARDADO EXITOSAMENTE EN ESTA COMPUTADORA!');
         console.log(`📂 Ubicación: ${filePath}`);
         console.log('\n📋 Para usar este archivo:');
-        console.log('1. Navega a la carpeta controlm en tu Escritorio');
+        console.log('1. Navega a la carpeta jsonControlm en tu Escritorio');
         console.log('2. Encuentra el archivo JSON');
         console.log('3. Úsalo con Control-M según tus necesidades');
         
         // Abrir la carpeta en el explorador (Windows)
         if (process.platform === 'win32') {
             try {
-                require('child_process').exec(`explorer "${controlMPath}"`);
+                require('child_process').exec(`explorer "${storagePath}"`);
                 console.log('📂 Abriendo carpeta en el explorador...');
             } catch (error) {
                 console.log('ℹ️ No se pudo abrir el explorador automáticamente');

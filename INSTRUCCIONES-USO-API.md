@@ -47,14 +47,14 @@ La API en Railway **NO puede** crear carpetas ni guardar archivos directamente e
    ```
 
 3. **Copia el `jsonContent`** de la respuesta
-4. **Crea la carpeta** `controlm` en tu Escritorio
+4. **Crea la carpeta** `jsonControlm` en tu Escritorio
 5. **Guarda el archivo** con el nombre especificado
 
 ## 📁 Ubicación de los Archivos
 
 Los archivos se guardarán en:
-- **OneDrive**: `C:\Users\[usuario]\OneDrive\Escritorio\controlm\`
-- **Sistema**: `C:\Users\[usuario]\Desktop\controlm\`
+- **OneDrive**: `C:\Users\[usuario]\OneDrive\Escritorio\jsonControlm\`
+- **Sistema**: `C:\Users\[usuario]\Desktop\jsonControlm\`
 
 ## 🔧 Solución de Problemas
 
@@ -83,5 +83,5 @@ Si tienes problemas:
 Para verificar que funciona:
 1. Ejecuta el script
 2. Verifica que aparezca el mensaje "ARCHIVO GUARDADO EXITOSAMENTE"
-3. Navega a la carpeta controlm en tu Escritorio
+3. Navega a la carpeta jsonControlm en tu Escritorio
 4. Verifica que el archivo JSON esté ahí

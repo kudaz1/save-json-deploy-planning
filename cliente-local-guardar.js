@@ -87,24 +87,24 @@ async function guardarArchivoEnMiPC() {
             console.log('📁 Detected: Desktop del sistema');
         }
         
-        const controlMPath = path.join(desktopPath, 'controlm');
+        const storagePath = path.join(desktopPath, 'jsonControlm');
         
         console.log(`\n📋 Paso 2: Guardando archivo en TU computadora...`);
         console.log(`👤 Usuario: ${os.userInfo().username}`);
         console.log(`🏠 Home: ${os.homedir()}`);
         console.log(`📁 Escritorio: ${desktopPath}`);
-        console.log(`📂 Carpeta controlm: ${controlMPath}\n`);
+        console.log(`📂 Carpeta de almacenamiento: ${storagePath}\n`);
         
-        // 4. Crear carpeta controlm si no existe
-        if (!fs.existsSync(controlMPath)) {
-            fs.mkdirSync(controlMPath, { recursive: true });
-            console.log(`✅ Carpeta creada: ${controlMPath}`);
+        // 4. Crear carpeta jsonControlm si no existe
+        if (!fs.existsSync(storagePath)) {
+            fs.mkdirSync(storagePath, { recursive: true });
+            console.log(`✅ Carpeta creada: ${storagePath}`);
         } else {
-            console.log(`ℹ️ Carpeta ya existe: ${controlMPath}`);
+            console.log(`ℹ️ Carpeta ya existe: ${storagePath}`);
         }
         
         // 5. Ruta completa del archivo
-        const filePath = path.join(controlMPath, filename);
+        const filePath = path.join(storagePath, filename);
         
         // 6. Guardar el archivo JSON
         fs.writeFileSync(filePath, JSON.stringify(jsonContent, null, 2));
@@ -121,13 +121,13 @@ async function guardarArchivoEnMiPC() {
         console.log(`📂 Ubicación: ${filePath}`);
         console.log('\n📋 Instrucciones:');
         console.log('1. Ve a tu Escritorio');
-        console.log('2. Abre la carpeta "controlm"');
+        console.log('2. Abre la carpeta "jsonControlm"');
         console.log('3. Ahí está tu archivo JSON');
         
         // Abrir la carpeta en el explorador (Windows)
         if (process.platform === 'win32') {
             try {
-                require('child_process').exec(`explorer "${controlMPath}"`);
+                require('child_process').exec(`explorer "${storagePath}"`);
                 console.log('\n📂 Abriendo carpeta en el explorador...');
             } catch (error) {
                 console.log('\nℹ️ No se pudo abrir el explorador automáticamente');

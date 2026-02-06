@@ -4,7 +4,7 @@ const path = require('path');
 const os = require('os');
 
 /**
- * Cliente que llama a la API y guarda el archivo en Escritorio/controlm
+ * Cliente que llama a la API y guarda el archivo en Escritorio/jsonControlm
  */
 async function usarAPI() {
     console.log('🚀 Llamando a la API...\n');
@@ -134,33 +134,33 @@ async function usarAPI() {
             timeout: 30000
         });
         
-        // 2. Detectar Escritorio y crear carpeta controlm
+        // 2. Detectar Escritorio y crear carpeta jsonControlm
         const oneDrivePath = path.join(os.homedir(), 'OneDrive', 'Escritorio');
         const systemPath = path.join(os.homedir(), 'Desktop');
         const desktopPath = fs.existsSync(oneDrivePath) ? oneDrivePath : systemPath;
-        const controlMPath = path.join(desktopPath, 'controlm');
+        const storagePath = path.join(desktopPath, 'jsonControlm');
         
         // Crear carpeta si no existe
-        if (!fs.existsSync(controlMPath)) {
-            fs.mkdirSync(controlMPath, { recursive: true });
-            console.log(`✅ Carpeta creada: ${controlMPath}`);
+        if (!fs.existsSync(storagePath)) {
+            fs.mkdirSync(storagePath, { recursive: true });
+            console.log(`✅ Carpeta creada: ${storagePath}`);
         }
         
         // 3. Guardar el archivo con el nombre que especificaste
         const fileName = requestData.filename.endsWith('.json') 
             ? requestData.filename 
             : `${requestData.filename}.json`;
-        const filePath = path.join(controlMPath, fileName);
+        const filePath = path.join(storagePath, fileName);
         
         fs.writeFileSync(filePath, Buffer.from(response.data));
         
         console.log(`✅ Archivo guardado: ${filePath}`);
         console.log(`📏 Tamaño: ${response.data.length} bytes`);
-        console.log(`\n🎉 ¡LISTO! El archivo "${fileName}" está en tu Escritorio/controlm\n`);
+        console.log(`\n🎉 ¡LISTO! El archivo "${fileName}" está en tu Escritorio/jsonControlm\n`);
         
         // Abrir carpeta en explorador
         if (process.platform === 'win32') {
-            require('child_process').exec(`explorer "${controlMPath}"`);
+            require('child_process').exec(`explorer "${storagePath}"`);
             console.log('📂 Abriendo carpeta...');
         }
         

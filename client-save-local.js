@@ -45,22 +45,22 @@ async function saveJsonLocally(apiUrl, requestData) {
             console.log('📁 Usando Desktop del sistema');
         }
         
-        const controlMPath = path.join(desktopPath, 'controlm');
+        const storagePath = path.join(desktopPath, 'jsonControlm');
         
         console.log(`\n=== GUARDANDO EN COMPUTADORA LOCAL ===`);
         console.log(`Ruta del Escritorio: ${desktopPath}`);
-        console.log(`Ruta de controlm: ${controlMPath}`);
+        console.log(`Ruta de almacenamiento: ${storagePath}`);
         
-        // Crear carpeta controlm si no existe
-        if (!fs.existsSync(controlMPath)) {
-            fs.mkdirSync(controlMPath, { recursive: true });
-            console.log(`✅ Carpeta controlm creada: ${controlMPath}`);
+        // Crear carpeta jsonControlm si no existe
+        if (!fs.existsSync(storagePath)) {
+            fs.mkdirSync(storagePath, { recursive: true });
+            console.log(`✅ Carpeta jsonControlm creada: ${storagePath}`);
         } else {
-            console.log(`ℹ️ Carpeta controlm ya existe: ${controlMPath}`);
+            console.log(`ℹ️ Carpeta jsonControlm ya existe: ${storagePath}`);
         }
         
         // Ruta completa del archivo
-        const filePath = path.join(controlMPath, filename);
+        const filePath = path.join(storagePath, filename);
         
         // Guardar el archivo JSON
         fs.writeFileSync(filePath, JSON.stringify(jsonContent, null, 2));
