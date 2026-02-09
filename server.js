@@ -654,9 +654,9 @@ function normalizeControlMStructure(obj) {
             }
             let s = v;
             if (k === 'Message' || (k === 'Subject' && s.includes('%%'))) {
-                // %%HORA\nAtte. (un salto después de %%HORA) y Atte.\n\nOperador (dos saltos después de Atte.)
-                s = s.replace(/\s+%%HORA\s+Atte\./g, ' %%HORA\nAtte.');
-                s = s.replace(/\s+Atte\.\s+Operador/g, 'Atte.\n\nOperador ');
+                // Usar secuencia literal \n (barra+n) en el JSON; Control-M rechaza el carácter newline real (control character)
+                s = s.replace(/\s+%%HORA\s+Atte\./g, ' %%HORA\\nAtte.');
+                s = s.replace(/\s+Atte\.\s+Operador/g, 'Atte.\\n\\nOperador ');
             }
             if (s.includes('%%SUBSTR') && s.includes('%%tm')) {
                 s = s.replace(/%%tm\s+(\d+)\s+(\d+)/g, '%%tm  $1 $2');
