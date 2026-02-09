@@ -654,8 +654,9 @@ function normalizeControlMStructure(obj) {
             }
             let s = v;
             if (k === 'Message' || (k === 'Subject' && s.includes('%%'))) {
-                s = s.replace(/\s+%%HORA\s+Atte\./g, ' %%HORA\\n\\nAtte.');
-                s = s.replace(/\s+Atte\.\s+Operador/g, '\\n\\nAtte.\\n\\nOperador');
+                // %%HORA\nAtte. (un salto después de %%HORA) y Atte.\n\nOperador (dos saltos después de Atte.)
+                s = s.replace(/\s+%%HORA\s+Atte\./g, ' %%HORA\nAtte.');
+                s = s.replace(/\s+Atte\.\s+Operador/g, 'Atte.\n\nOperador ');
             }
             if (s.includes('%%SUBSTR') && s.includes('%%tm')) {
                 s = s.replace(/%%tm\s+(\d+)\s+(\d+)/g, '%%tm  $1 $2');
