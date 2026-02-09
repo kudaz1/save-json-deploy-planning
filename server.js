@@ -1218,7 +1218,7 @@ guardarArchivoAutomaticamente();
 // Ahora lee el archivo desde la ruta de almacenamiento en EC2
 async function executeControlMApi(controlmApiUrl, token, filePath) {
     try {
-        // Almacenar información de la llamada para debugging
+        filePath = path.resolve(filePath);
         const fileName = path.basename(filePath);
         const fileStats = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
         
@@ -1492,29 +1492,38 @@ app.post('/save-json', async (req, res) => {
 
         // ===== LÓGICA DE GUARDADO (IDÉNTICA AL SCRIPT QUE FUNCIONA) =====
         
-        // 5. Obtener rutas (intentar Desktop; si falla por permisos, usar carpeta del proyecto)
+        // 5. Obtener rutas (en Linux/EC2 usar carpeta del proyecto para que guardado y Control-M usen el mismo archivo)
         console.log('[5] Obteniendo rutas...');
         const homeDir = os.homedir();
-        console.log('[5] Home directory:', homeDir);
+        const projectStoragePath = path.resolve(__dirname, 'jsonControlm');
+        const isLinux = process.platform === 'linux';
         
-        let desktopPath = path.join(homeDir, 'Desktop');
-        let storagePath = path.join(desktopPath, 'jsonControlm');
-        const projectStoragePath = path.join(__dirname, 'jsonControlm');
-        let filePath = path.join(storagePath, fileName);
-        
-        console.log('[5] Desktop path:', desktopPath);
-        console.log('[5] Storage path (primario):', storagePath);
+        let storagePath;
+        if (isLinux) {
+            storagePath = projectStoragePath;
+            console.log('[5] Linux/EC2: usando carpeta del proyecto:', storagePath);
+        } else {
+            const desktopPath = path.join(homeDir, 'Desktop');
+            storagePath = path.join(desktopPath, 'jsonControlm');
+            console.log('[5] Home directory:', homeDir);
+            console.log('[5] Desktop path:', desktopPath);
+            console.log('[5] Storage path (primario):', storagePath);
+        }
         console.log('[5] Storage path (fallback proyecto):', projectStoragePath);
+        
+        let filePath = path.resolve(storagePath, fileName);
         
         // 6. Crear carpetas
         console.log('[6] Creando carpetas...');
-        try {
-            fs.mkdirSync(desktopPath, { recursive: true });
-            console.log('[6] ✅ Desktop creado/verificado');
-        } catch (e) {
-            console.log('[6] ℹ️ Desktop ya existe o error (ignorado):', e.message);
+        if (!isLinux) {
+            const desktopPath = path.join(homeDir, 'Desktop');
+            try {
+                fs.mkdirSync(desktopPath, { recursive: true });
+                console.log('[6] ✅ Desktop creado/verificado');
+            } catch (e) {
+                console.log('[6] ℹ️ Desktop ya existe o error (ignorado):', e.message);
+            }
         }
-        
         try {
             fs.mkdirSync(storagePath, { recursive: true });
             console.log('[6] ✅ jsonControlm creado/verificado');
@@ -1542,7 +1551,7 @@ app.post('/save-json', async (req, res) => {
                 try {
                     fs.mkdirSync(projectStoragePath, { recursive: true });
                     storagePath = projectStoragePath;
-                    filePath = path.join(storagePath, fileName);
+                    filePath = path.resolve(storagePath, fileName);
                     fs.writeFileSync(filePath, jsonString, 'utf8');
                     console.log('[8] ✅ Archivo escrito en carpeta del proyecto:', filePath);
                 } catch (fallbackError) {
@@ -1620,27 +1629,33 @@ app.post('/save-json', async (req, res) => {
         console.log('========================================\n');
         
         if (controlmApiUrl && controlmApiUrl.startsWith('http') && token) {
-            console.log('\n========================================');
-            console.log('=== EJECUTANDO CONTROL-M AUTOMÁTICAMENTE ===');
-            console.log('========================================\n');
-            
-            try {
-                controlMResult = await executeControlMApi(controlmApiUrl, token, filePath);
+            const absoluteFilePath = path.resolve(filePath);
+            if (!fs.existsSync(absoluteFilePath)) {
+                console.error('[CONTROL-M] ❌ El archivo no existe en la ruta que se enviará:', absoluteFilePath);
+                controlMResult = { success: false, error: 'El archivo guardado no existe en: ' + absoluteFilePath };
+            } else {
+                console.log('[CONTROL-M] Ruta absoluta del archivo a enviar:', absoluteFilePath);
+                console.log('\n========================================');
+                console.log('=== EJECUTANDO CONTROL-M AUTOMÁTICAMENTE ===');
+                console.log('========================================\n');
                 
-                if (controlMResult.success) {
-                    console.log('✅ Control-M ejecutado exitosamente');
-                } else {
-                    console.error('❌ Control-M falló:', controlMResult.error);
+                try {
+                    controlMResult = await executeControlMApi(controlmApiUrl, token, absoluteFilePath);
+                    if (controlMResult.success) {
+                        console.log('✅ Control-M ejecutado exitosamente');
+                    } else {
+                        console.error('❌ Control-M falló:', controlMResult.error);
+                    }
+                } catch (controlMError) {
+                    console.error('❌ Error ejecutando Control-M (catch):', controlMError.message);
+                    console.error('Stack:', controlMError.stack);
+                    controlMResult = {
+                        success: false,
+                        error: controlMError.message,
+                        status: controlMError.response?.status || 'N/A',
+                        message: 'Error ejecutando API de Control-M'
+                    };
                 }
-            } catch (controlMError) {
-                console.error('❌ Error ejecutando Control-M (catch):', controlMError.message);
-                console.error('Stack:', controlMError.stack);
-                controlMResult = {
-                    success: false,
-                    error: controlMError.message,
-                    status: controlMError.response?.status || 'N/A',
-                    message: 'Error ejecutando API de Control-M'
-                };
             }
         } else {
             console.log('ℹ️ Control-M no se ejecutará:');
