@@ -1607,9 +1607,9 @@ app.post('/save-json', async (req, res) => {
         console.log('Storage path:', storagePath);
         console.log('========================================\n');
         
-        // EJECUTAR CONTROL-M AUTOMÁTICAMENTE después de guardar
+        // EJECUTAR CONTROL-M AUTOMÁTICAMENTE después de guardar (usar controlm_api ya recortado)
         let controlMResult = null;
-        const controlmApiUrl = req.body.controlm_api;
+        const controlmApiUrl = (controlm_api != null && typeof controlm_api === 'string') ? controlm_api.trim() : '';
         
         console.log('\n========================================');
         console.log('=== VERIFICACIÓN CONTROL-M ===');
@@ -1619,7 +1619,7 @@ app.post('/save-json', async (req, res) => {
         console.log(`filePath: ${filePath}`);
         console.log('========================================\n');
         
-        if (controlmApiUrl && token) {
+        if (controlmApiUrl && controlmApiUrl.startsWith('http') && token) {
             console.log('\n========================================');
             console.log('=== EJECUTANDO CONTROL-M AUTOMÁTICAMENTE ===');
             console.log('========================================\n');
