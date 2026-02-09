@@ -81,6 +81,15 @@ function javaMapStringToObject(str) {
         return pos < str.length && (str[pos] === '}' || str[pos] === '\uFF5D');
     }
 
+    function peekNextKey() {
+        let p = i;
+        while (p < str.length && /[\s,]/.test(str[p])) p++;
+        if (str.substring(p, p + 7) === 'JobAFT=') return true;
+        if (str.substring(p, p + 21) === 'IfBase:Folder:Output_') return true;
+        if (str.substring(p, p + 17) === 'eventsToWaitFor=') return true;
+        return false;
+    }
+
     function parseObject(depth) {
         if (depth === undefined) depth = 0;
         if (str[i] !== '{') return null;
@@ -92,28 +101,42 @@ function javaMapStringToObject(str) {
             if (isCloseCurly(i)) {
                 i++;
                 skipWs();
-                // Si hay "}}, " y la siguiente clave es de nivel job (JobAFT, IfBase:Folder:Output_*, eventsToWaitFor), seguir leyendo.
-                if (isCloseCurly(i)) {
-                    const savedI = i;
+                if (depth === 1 && str[i] === ',') {
+                    i++;
+                    continue;
+                }
+                if (depth === 1 && isCloseCurly(i)) {
                     i++;
                     skipWs();
                     if (str[i] === ',') { i++; skipWs(); }
-                    const keyStart = i;
-                    while (i < str.length && str[i] !== '=') i++;
-                    const nextKey = str.substring(keyStart, i).trim();
-                    i = savedI;
-                    const isJobLevelKey = nextKey === 'JobAFT' || (nextKey && nextKey.startsWith('IfBase:Folder:Output_')) || nextKey === 'eventsToWaitFor';
-                    const looksLikeCC1040P2 = obj.RerunLimit != null && obj.When != null;
-                    if ((depth === 1 || looksLikeCC1040P2) && isJobLevelKey) {
+                    if (peekNextKey()) continue;
+                }
+                const looksLikeJob = obj.RerunLimit != null && obj.When != null;
+                if (looksLikeJob && str[i] === ',') {
+                    i++;
+                    continue;
+                }
+                if (looksLikeJob && isCloseCurly(i)) {
+                    i++;
+                    skipWs();
+                    if (str[i] === ',') {
                         i++;
-                        skipWs();
-                        if (str[i] === ',') i++;
                         continue;
                     }
+                    if (peekNextKey()) continue;
                 }
                 if (depth === 1 && str[i] === ',') {
                     i++;
                     continue;
+                }
+                if (depth === 1 && isCloseCurly(i)) {
+                    i++;
+                    skipWs();
+                    if (str[i] === ',') {
+                        i++;
+                        continue;
+                    }
+                    if (peekNextKey()) continue;
                 }
                 return obj;
             }
@@ -172,12 +195,15 @@ function javaMapStringToObject(str) {
                 let depth = 0;
                 while (i < str.length) {
                     const c = str[i];
+                    if (depth === 0 && (c === ',' || c === ']' || c === '\uFF3D')) break;
                     if (c === '[' || c === '{') depth++;
-                    else if (c === ']' || c === '}') depth--;
-                    else if (depth === 0 && (c === ',' || c === ']')) break;
+                    else if (c === ']' || c === '}' || c === '\uFF3D') depth--;
                     i++;
                 }
                 value = str.substring(valStart, i).trim();
+                if (typeof value === 'string' && value.includes('], ')) {
+                    value = value.split('], ')[0].trim();
+                }
             }
             arr.push(value);
             skipWs();
@@ -305,7 +331,8 @@ function convertJsonDataFromJavaMap(jsonDataString) {
             const parsed = JSON.parse(trimmed);
             return { converted: parsed, jsonString: JSON.stringify(parsed, null, 2), fromJavaMap: false };
         } catch (_) {
-            const javaMapObj = javaMapStringToObject(trimmed);
+            const toParse = (trimmed.startsWith('{') && trimmed.endsWith('}')) ? trimmed : ('{' + trimmed + '}');
+            const javaMapObj = javaMapStringToObject(toParse);
             if (javaMapObj == null) return { converted: null, error: 'No se pudo convertir formato Java/Map' };
             let converted = deepParseJavaMap(javaMapObj);
             converted = normalizeControlMStructure(converted);
@@ -469,24 +496,64 @@ function toArrayOfStrings(val) {
 }
 
 /**
+ * Repara WeekDays cuando el parser metió texto extra en el último elemento (ej: "FRI], MonthDays=...").
+ * Devuelve { weekDays: string[], restWhenKeys: object | null }. restWhenKeys tiene MonthDays, FromTime, etc. si se extrajeron.
+ */
+function repairWeekDaysCorrupted(weekDays) {
+    if (!Array.isArray(weekDays) || weekDays.length === 0) return { weekDays, restWhenKeys: null };
+    const last = weekDays[weekDays.length - 1];
+    if (typeof last !== 'string') return { weekDays, restWhenKeys: null };
+    const idx = last.indexOf('], ');
+    if (idx === -1) return { weekDays, restWhenKeys: null };
+    const goodPart = last.substring(0, idx).trim();
+    let rest = last.substring(idx + 3).trim();
+    const fixed = weekDays.slice(0, -1).concat(goodPart ? [goodPart] : []);
+    const endWhen = rest.search(/\}\s*\},\s*/);
+    if (endWhen !== -1) rest = rest.substring(0, endWhen).trim();
+    let restWhenKeys = null;
+    try {
+        const wrapped = (rest.startsWith('{') ? rest : '{' + rest + '}');
+        restWhenKeys = javaMapStringToObject(wrapped);
+        if (restWhenKeys != null) restWhenKeys = deepParseJavaMap(restWhenKeys);
+    } catch (_) {}
+    return { weekDays: fixed, restWhenKeys };
+}
+
+/**
  * Acomoda When a { WeekDays, MonthDays, FromTime, DaysRelation, ConfirmationCalendars }.
+ * Repara WeekDays corruptos (elemento que contiene "], MonthDays=...") extrayendo solo los días y parseando el resto.
  */
 function ensureWhen(obj) {
     if (obj === null || obj === undefined) return obj;
     if (typeof obj !== 'object') return obj;
     const result = {};
-    result.WeekDays = toArrayOfStrings(obj.WeekDays);
-    if (result.WeekDays.length === 0) result.WeekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
-    result.MonthDays = toArrayOfStrings(obj.MonthDays);
-    if (result.MonthDays.length === 0) result.MonthDays = ['NONE'];
-    result.FromTime = (obj.FromTime != null && typeof obj.FromTime !== 'object') ? String(obj.FromTime) : '2000';
-    result.DaysRelation = (obj.DaysRelation != null && typeof obj.DaysRelation !== 'object') ? String(obj.DaysRelation) : 'OR';
-    if (obj.ConfirmationCalendars != null && typeof obj.ConfirmationCalendars === 'object' && !Array.isArray(obj.ConfirmationCalendars)) {
-        result.ConfirmationCalendars = normalizeControlMStructure(obj.ConfirmationCalendars);
-    } else if (obj.ConfirmationCalendars != null) {
-        result.ConfirmationCalendars = { Calendar: String(obj.ConfirmationCalendars) };
+    let weekDaysRaw = obj.WeekDays;
+    if (Array.isArray(weekDaysRaw)) {
+        const repaired = repairWeekDaysCorrupted(weekDaysRaw);
+        result.WeekDays = toArrayOfStrings(repaired.weekDays);
+        if (repaired.restWhenKeys && typeof repaired.restWhenKeys === 'object') {
+            if (repaired.restWhenKeys.WeekDays != null) result.WeekDays = toArrayOfStrings(repaired.restWhenKeys.WeekDays);
+            if (repaired.restWhenKeys.MonthDays != null) result.MonthDays = toArrayOfStrings(repaired.restWhenKeys.MonthDays);
+            if (repaired.restWhenKeys.FromTime != null) result.FromTime = String(repaired.restWhenKeys.FromTime);
+            if (repaired.restWhenKeys.DaysRelation != null) result.DaysRelation = String(repaired.restWhenKeys.DaysRelation);
+            if (repaired.restWhenKeys.ConfirmationCalendars != null) result.ConfirmationCalendars = normalizeControlMStructure(repaired.restWhenKeys.ConfirmationCalendars);
+        }
     } else {
-        result.ConfirmationCalendars = { Calendar: 'Cal_Habil' };
+        result.WeekDays = toArrayOfStrings(weekDaysRaw);
+    }
+    if (result.WeekDays.length === 0) result.WeekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
+    result.MonthDays = result.MonthDays != null ? result.MonthDays : toArrayOfStrings(obj.MonthDays);
+    if (result.MonthDays.length === 0) result.MonthDays = ['NONE'];
+    result.FromTime = (result.FromTime != null ? result.FromTime : (obj.FromTime != null && typeof obj.FromTime !== 'object') ? String(obj.FromTime) : '2000');
+    result.DaysRelation = (result.DaysRelation != null ? result.DaysRelation : (obj.DaysRelation != null && typeof obj.DaysRelation !== 'object') ? String(obj.DaysRelation) : 'OR');
+    if (result.ConfirmationCalendars == null) {
+        if (obj.ConfirmationCalendars != null && typeof obj.ConfirmationCalendars === 'object' && !Array.isArray(obj.ConfirmationCalendars)) {
+            result.ConfirmationCalendars = normalizeControlMStructure(obj.ConfirmationCalendars);
+        } else if (obj.ConfirmationCalendars != null) {
+            result.ConfirmationCalendars = { Calendar: String(obj.ConfirmationCalendars) };
+        } else {
+            result.ConfirmationCalendars = { Calendar: 'Cal_Habil' };
+        }
     }
     return result;
 }
@@ -1424,18 +1491,19 @@ app.post('/save-json', async (req, res) => {
 
         // ===== LÓGICA DE GUARDADO (IDÉNTICA AL SCRIPT QUE FUNCIONA) =====
         
-        // 5. Obtener rutas
+        // 5. Obtener rutas (intentar Desktop; si falla por permisos, usar carpeta del proyecto)
         console.log('[5] Obteniendo rutas...');
         const homeDir = os.homedir();
         console.log('[5] Home directory:', homeDir);
         
-        const desktopPath = path.join(homeDir, 'Desktop');
-        const storagePath = path.join(desktopPath, 'jsonControlm');
-        const filePath = path.join(storagePath, fileName);
+        let desktopPath = path.join(homeDir, 'Desktop');
+        let storagePath = path.join(desktopPath, 'jsonControlm');
+        const projectStoragePath = path.join(__dirname, 'jsonControlm');
+        let filePath = path.join(storagePath, fileName);
         
         console.log('[5] Desktop path:', desktopPath);
-        console.log('[5] Storage path:', storagePath);
-        console.log('[5] File path:', filePath);
+        console.log('[5] Storage path (primario):', storagePath);
+        console.log('[5] Storage path (fallback proyecto):', projectStoragePath);
         
         // 6. Crear carpetas
         console.log('[6] Creando carpetas...');
@@ -1460,17 +1528,31 @@ app.post('/save-json', async (req, res) => {
         console.log('[7] Longitud:', jsonString.length, 'caracteres');
         console.log('[7] Tamaño aproximado:', Math.round(jsonString.length / 1024), 'KB');
         
-        // 8. ESCRIBIR ARCHIVO
+        // 8. ESCRIBIR ARCHIVO (con fallback si EPERM en Desktop)
         console.log('[8] Escribiendo archivo...');
         console.log('[8] Ruta completa:', filePath);
         try {
             fs.writeFileSync(filePath, jsonString, 'utf8');
             console.log('[8] ✅ Archivo escrito exitosamente');
         } catch (writeError) {
-            console.error('[8] ❌ ERROR al escribir:', writeError.message);
-            console.error('[8] Code:', writeError.code);
-            console.error('[8] Errno:', writeError.errno);
-            throw writeError;
+            const isPermissionError = writeError.code === 'EPERM' || writeError.code === 'EACCES';
+            if (isPermissionError && storagePath !== projectStoragePath) {
+                console.log('[8] ⚠️ Sin permisos en Escritorio, usando carpeta del proyecto:', projectStoragePath);
+                try {
+                    fs.mkdirSync(projectStoragePath, { recursive: true });
+                    storagePath = projectStoragePath;
+                    filePath = path.join(storagePath, fileName);
+                    fs.writeFileSync(filePath, jsonString, 'utf8');
+                    console.log('[8] ✅ Archivo escrito en carpeta del proyecto:', filePath);
+                } catch (fallbackError) {
+                    console.error('[8] ❌ ERROR también en fallback:', fallbackError.message);
+                    throw fallbackError;
+                }
+            } else {
+                console.error('[8] ❌ ERROR al escribir:', writeError.message);
+                console.error('[8] Code:', writeError.code);
+                throw writeError;
+            }
         }
         
         // 9. VERIFICAR INMEDIATAMENTE

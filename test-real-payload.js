@@ -21,6 +21,26 @@ console.log('When:', !!job.When);
 console.log('JobAFT:', !!job.JobAFT);
 console.log('IfBase:Folder:Output_12:', !!job['IfBase:Folder:Output_12']);
 console.log('eventsToWaitFor:', !!job.eventsToWaitFor);
+
+// WeekDays debe ser ["MON","TUE","WED","THU","FRI"]; el último elemento no debe contener "], MonthDays="
+const weekDays = job.When && job.When.WeekDays;
+const expectedWeekDays = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
+if (!Array.isArray(weekDays) || weekDays.length !== 5) {
+    console.error('WeekDays debe ser array de 5 elementos:', weekDays);
+    process.exit(1);
+}
+const lastDay = weekDays[4];
+if (lastDay !== 'FRI' || lastDay.includes('],') || lastDay.includes('MonthDays')) {
+    console.error('Último elemento de WeekDays debe ser exactamente "FRI", recibido:', JSON.stringify(lastDay));
+    process.exit(1);
+}
+const weekDaysOk = expectedWeekDays.every((d, idx) => weekDays[idx] === d);
+if (!weekDaysOk) {
+    console.error('WeekDays esperado:', expectedWeekDays, 'recibido:', weekDays);
+    process.exit(1);
+}
+console.log('WeekDays OK:', weekDays);
+
 if (job.When && job.JobAFT && job['IfBase:Folder:Output_12'] && job.eventsToWaitFor) {
     console.log('\nOK: Todos los campos esperados están presentes.');
 } else {
