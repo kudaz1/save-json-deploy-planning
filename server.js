@@ -1390,12 +1390,13 @@ app.post('/save-json', async (req, res) => {
         console.log('[1] Content-Length:', req.headers['content-length']);
         
         // 2. Validaciones básicas (trim para valores enviados desde Jira u otros con espacios)
-        let { ambiente, token, filename, jsonData, controlm_api, script_path } = req.body;
+        let { ambiente, token, filename, jsonData, controlm_api, script_path, returnJsonDataBeforeSave } = req.body;
         ambiente = ambiente != null ? String(ambiente).trim() : '';
         token = token != null ? String(token).trim() : '';
         filename = filename != null ? String(filename).trim() : '';
         controlm_api = controlm_api != null ? String(controlm_api).trim() : '';
         script_path = script_path != null ? String(script_path).trim() : '';
+        const wantJsonDataInResponse = returnJsonDataBeforeSave === true || returnJsonDataBeforeSave === 'true';
         console.log('[2] Datos extraídos:', {
             ambiente: ambiente,
             token: token ? token.substring(0, 10) + '...' : 'NO',
@@ -1403,7 +1404,8 @@ app.post('/save-json', async (req, res) => {
             hasJsonData: !!jsonData,
             jsonDataType: typeof jsonData,
             controlm_api: controlm_api || 'NO (opcional)',
-            script_path: script_path || 'NO (opcional)'
+            script_path: script_path || 'NO (opcional)',
+            returnJsonDataBeforeSave: wantJsonDataInResponse
         });
         
         if (!ambiente || !token || !filename || !jsonData) {
@@ -1436,6 +1438,28 @@ app.post('/save-json', async (req, res) => {
                 success: false,
                 error: 'El campo "ambiente" solo puede tener los valores "DEV" o "QA"'
             });
+        }
+
+        // 2.5 Valor de jsonData ANTES de crear el archivo (para inspección / debug)
+        let jsonDataBeforeSave = null;
+        if (typeof jsonData === 'string') {
+            const len = jsonData.length;
+            const sample = len <= 1200 ? jsonData : jsonData.substring(0, 800) + '\n... [truncado, total ' + len + ' caracteres] ...\n' + jsonData.substring(len - 400);
+            console.log('[2.5] jsonData (string) longitud:', len);
+            console.log('[2.5] jsonData (string) valor/muestra:\n', sample);
+            if (wantJsonDataInResponse) {
+                jsonDataBeforeSave = { type: 'string', length: len, value: len <= 3000 ? jsonData : sample };
+            }
+        } else if (jsonData && typeof jsonData === 'object') {
+            const str = JSON.stringify(jsonData);
+            const len = str.length;
+            const sample = len <= 1200 ? str : str.substring(0, 800) + '\n... [truncado, total ' + len + ' caracteres] ...\n' + str.substring(len - 400);
+            console.log('[2.5] jsonData (objeto) longitud stringificado:', len);
+            console.log('[2.5] jsonData (objeto) keys:', Object.keys(jsonData));
+            console.log('[2.5] jsonData (objeto) muestra:\n', sample);
+            if (wantJsonDataInResponse) {
+                jsonDataBeforeSave = { type: 'object', length: len, keys: Object.keys(jsonData), value: len <= 3000 ? jsonData : sample };
+            }
         }
 
         // 3. Parsear JSON (acepta JSON estándar o formato Java/Map desde Jira)
@@ -1771,6 +1795,9 @@ app.post('/save-json', async (req, res) => {
         }
         if (scriptResult) {
             response.scriptResult = scriptResult;
+        }
+        if (wantJsonDataInResponse && jsonDataBeforeSave) {
+            response.jsonDataBeforeSave = jsonDataBeforeSave;
         }
         
         res.json(response);
