@@ -653,14 +653,24 @@ function ensureControlMTypeFirst(obj, parentKey) {
         } else if (Array.isArray(v)) {
             const keyNormArr = k.toLowerCase().replace(/_/g, '');
             const isFileTransfersArr = keyNormArr === 'filetransfers';
-            ordered[k] = v.map(item => {
-                if (item == null || typeof item !== 'object') return item;
-                const processed = ensureControlMTypeFirst(item, isFileTransfersArr ? 'FileTransfer' : k);
-                if (isFileTransfersArr) {
-                    return { FileTransfer: processed };
+            if (isFileTransfersArr) {
+                const fileTransferItems = [];
+                for (const item of v) {
+                    if (item == null || typeof item !== 'object') continue;
+                    const typeVal = (item.Type || '') + '';
+                    if (typeVal.startsWith('Job:') && !typeVal.includes('FileTransfer')) {
+                        continue;
+                    }
+                    const processed = ensureControlMTypeFirst(item, 'FileTransfer');
+                    fileTransferItems.push({ FileTransfer: processed });
                 }
-                return processed;
-            });
+                ordered[k] = fileTransferItems;
+            } else {
+                ordered[k] = v.map(item => {
+                    if (item == null || typeof item !== 'object') return item;
+                    return ensureControlMTypeFirst(item, k);
+                });
+            }
         } else {
             ordered[k] = v;
         }
@@ -671,8 +681,8 @@ function ensureControlMTypeFirst(obj, parentKey) {
 /**
  * Pase final: wrap necesario para Control-M.
  * - Objetos con "ModifyCase" sin Type/DestinationFilename primero -> envolver en { DestinationFilename: obj }.
- * - Objetos con primera clave "ABSTIME" (sin Type) -> poner Type primero (first property must be type); valor Type = "RuleBasedCalendars".
- * - FileTransfers: array de { FileTransfer: ... } (revertido objeto con "0","1" = "0 is an unknown keyword").
+ * - Objetos con primera clave "ABSTIME" (sin Type) -> no se añade Type (RuleBasedCalendars = unknown type).
+ * - FileTransfers: solo elementos que no son otro Job (ej. Job:OS400) se envuelven en { FileTransfer: ... }.
  */
 function fixControlMFinal(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
@@ -685,7 +695,6 @@ function fixControlMFinal(obj, parentKey) {
     const firstKey = keys[0];
     const hasModifyCase = keys.includes('ModifyCase');
     const needsDestinationFilenameWrap = hasModifyCase && firstKey !== 'Type' && firstKey !== 'DestinationFilename';
-    const needsAbstimeTypeFirst = firstKey === 'ABSTIME' && !keys.includes('Type');
     let result;
     if (needsDestinationFilenameWrap) {
         const inner = {};
@@ -693,11 +702,6 @@ function fixControlMFinal(obj, parentKey) {
             inner[k] = fixControlMFinal(obj[k], k);
         }
         result = { DestinationFilename: { DestinationFilename: inner } };
-    } else if (needsAbstimeTypeFirst) {
-        result = { Type: 'RuleBasedCalendars' };
-        for (const k of keys) {
-            result[k] = fixControlMFinal(obj[k], k);
-        }
     } else {
         result = {};
         for (const k of keys) {
