@@ -651,11 +651,13 @@ function ensureControlMTypeFirst(obj, parentKey) {
             }
             ordered[k] = v;
         } else if (Array.isArray(v)) {
-            const childKey = k === 'FileTransfers' ? 'FileTransfer' : k;
+            const keyNormArr = k.toLowerCase().replace(/_/g, '');
+            const isFileTransfersArr = keyNormArr === 'filetransfers';
+            const childKey = isFileTransfersArr ? 'FileTransfer' : k;
             ordered[k] = v.map(item => {
                 if (item == null || typeof item !== 'object') return item;
                 const processed = ensureControlMTypeFirst(item, childKey);
-                if (k === 'FileTransfers') {
+                if (isFileTransfersArr) {
                     return { FileTransfer: processed };
                 }
                 return processed;
@@ -668,10 +670,10 @@ function ensureControlMTypeFirst(obj, parentKey) {
 }
 
 /**
- * Pase final: solo wrap necesario para Control-M (sin name/value ni ABSTIME).
+ * Pase final: wrap necesario para Control-M.
  * - Objetos con "ModifyCase" sin Type/DestinationFilename primero -> envolver en { DestinationFilename: obj }.
+ * - Objetos con primera clave "ABSTIME" (sin Type) -> envolver en { ABSTIME: obj } (first property must be type; no añadir Type: "ABSTIME" = unknown type).
  * - Array FileTransfers: cada elemento -> { FileTransfer: ... }.
- * No se convierte a name/value (Control-M rechaza "name" en muchos contextos).
  */
 function fixControlMFinal(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
@@ -692,6 +694,7 @@ function fixControlMFinal(obj, parentKey) {
     const firstKey = keys[0];
     const hasModifyCase = keys.includes('ModifyCase');
     const needsDestinationFilenameWrap = hasModifyCase && firstKey !== 'Type' && firstKey !== 'DestinationFilename';
+    const needsAbstimeWrap = firstKey === 'ABSTIME' && !keys.includes('Type');
     let result;
     if (needsDestinationFilenameWrap) {
         const inner = {};
@@ -699,6 +702,12 @@ function fixControlMFinal(obj, parentKey) {
             inner[k] = fixControlMFinal(obj[k], k);
         }
         result = { DestinationFilename: { DestinationFilename: inner } };
+    } else if (needsAbstimeWrap) {
+        const inner = {};
+        for (const k of keys) {
+            inner[k] = fixControlMFinal(obj[k], k);
+        }
+        result = { ABSTIME: inner };
     } else {
         result = {};
         for (const k of keys) {
