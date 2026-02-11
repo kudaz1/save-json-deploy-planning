@@ -602,31 +602,14 @@ function ensureAttachOutput(value) {
 }
 
 /**
- * Convierte arrays que Control-M exige como "name and value pair" (mismo parseo que GENER_NEXUS-DEMOGRAFICO-CARLOS).
- * - Solo elementos que son OBJETOS de una clave (ej. Variables: [{ "tm": "%%TIME" }]) -> { name, value }.
- * - Arrays de strings (ej. When.WeekDays: ["MON","TUE"]) se dejan igual.
- * - Objetos con varias claves (ej. FileTransfers con Src, Dest) se dejan igual.
+ * Recorre el árbol sin cambiar estructura de arrays (mismo parseo que GENER_NEXUS-DEMOGRAFICO-CARLOS).
+ * No se convierte a name/value: Control-M rechaza "name" en muchos contextos (unknown keyword).
+ * Variables, When.WeekDays, etc. se dejan como single-key objects o strings.
  */
 function ensureControlMNameValueArrays(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
     if (Array.isArray(obj)) {
-        return obj.map((item) => {
-            if (item == null) return item;
-            if (typeof item === 'string') return item;
-            if (typeof item === 'object' && !Array.isArray(item)) {
-                const keys = Object.keys(item);
-                if (keys.length === 1 && keys[0] !== 'name') {
-                    return { name: keys[0], value: ensureControlMNameValueArrays(item[keys[0]], null) };
-                }
-                if (keys.length === 2 && keys.includes('name') && keys.includes('value')) {
-                    return { name: item.name, value: ensureControlMNameValueArrays(item.value, null) };
-                }
-                if (keys.length >= 1) {
-                    return Object.fromEntries(keys.map(k => [k, ensureControlMNameValueArrays(item[k], k)]));
-                }
-            }
-            return item;
-        });
+        return obj.map((item) => ensureControlMNameValueArrays(item, parentKey));
     }
     if (typeof obj !== 'object') return obj;
     const result = {};
@@ -685,42 +668,30 @@ function ensureControlMTypeFirst(obj, parentKey) {
 }
 
 /**
- * Pase final: mismo parseo que GENER_NEXUS-DEMOGRAFICO-CARLOS; corrige por contenido para Control-M.
+ * Pase final: solo wrap necesario para Control-M (sin name/value ni ABSTIME).
  * - Objetos con "ModifyCase" sin Type/DestinationFilename primero -> envolver en { DestinationFilename: obj }.
- * - Objetos con primera clave "ABSTIME" (sin Type) -> poner Type: "ABSTIME" primero (first property must be type).
  * - Array FileTransfers: cada elemento -> { FileTransfer: ... }.
- * - Arrays: objetos de una clave -> { name, value }; objetos de varias claves -> explotar a varios { name, value }; strings sin cambiar.
+ * No se convierte a name/value (Control-M rechaza "name" en muchos contextos).
  */
 function fixControlMFinal(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
-    if (Array.isArray(obj)) {
-        const out = obj.flatMap((item) => {
-            if (item == null) return [item];
-            if (typeof item === 'string') return [item];
-            if (typeof item === 'object' && !Array.isArray(item)) {
-                const keys = Object.keys(item);
-                if (parentKey === 'FileTransfers') {
-                    const inner = Object.prototype.hasOwnProperty.call(item, 'FileTransfer') ? item.FileTransfer : item;
-                    return [{ FileTransfer: fixControlMFinal(inner, null) }];
-                }
-                if (keys.length === 1 && keys[0] !== 'name') return [{ name: keys[0], value: fixControlMFinal(item[keys[0]], null) }];
-                if (keys.length === 2 && keys.includes('name') && keys.includes('value')) return [{ name: item.name, value: fixControlMFinal(item.value, null) }];
-                if (keys.length > 1) {
-                    return keys.map((k) => ({ name: k, value: fixControlMFinal(item[k], null) }));
-                }
-                return [fixControlMFinal(item, null)];
-            }
-            return [item];
-        });
-        return out;
-    }
     if (typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) {
+        const isFileTransfers = parentKey && String(parentKey).toLowerCase() === 'filetransfers';
+        return obj.map((item) => {
+            if (item == null || typeof item !== 'object' || Array.isArray(item)) return fixControlMFinal(item, parentKey);
+            if (isFileTransfers) {
+                const inner = Object.prototype.hasOwnProperty.call(item, 'FileTransfer') ? item.FileTransfer : item;
+                return { FileTransfer: fixControlMFinal(inner, null) };
+            }
+            return fixControlMFinal(item, parentKey);
+        });
+    }
     const keys = Object.keys(obj);
     if (keys.length === 0) return obj;
     const firstKey = keys[0];
     const hasModifyCase = keys.includes('ModifyCase');
     const needsDestinationFilenameWrap = hasModifyCase && firstKey !== 'Type' && firstKey !== 'DestinationFilename';
-    const needsAbstimeTypeFirst = firstKey === 'ABSTIME' && !keys.includes('Type');
     let result;
     if (needsDestinationFilenameWrap) {
         const inner = {};
@@ -728,11 +699,6 @@ function fixControlMFinal(obj, parentKey) {
             inner[k] = fixControlMFinal(obj[k], k);
         }
         result = { DestinationFilename: { DestinationFilename: inner } };
-    } else if (needsAbstimeTypeFirst) {
-        result = { Type: 'ABSTIME' };
-        for (const k of keys) {
-            result[k] = fixControlMFinal(obj[k], k);
-        }
     } else {
         result = {};
         for (const k of keys) {
