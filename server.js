@@ -640,8 +640,7 @@ function ensureControlMNameValueArrays(obj, parentKey) {
 /**
  * Control-M API: (1) En Folder/Job pone "Type" primero si existe.
  * (2) En objetos anidados que exigen "first property must be type" (DestinationFilename,
- * FileWatcherOptions, elementos de FileTransfers) no usa "Type" (da error), sino que envuelve
- * el objeto en una clave con el nombre del tipo: { "DestinationFilename": { ... } }, { "FileTransfer": { ... } }.
+ * FileWatcherOptions, elementos de FileTransfers) envuelve en la clave del tipo.
  */
 function ensureControlMTypeFirst(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
@@ -662,9 +661,10 @@ function ensureControlMTypeFirst(obj, parentKey) {
         let v = obj[k];
         if (v != null && typeof v === 'object' && !Array.isArray(v)) {
             v = ensureControlMTypeFirst(v, k);
-            if (k === 'DestinationFilename') {
+            const keyNorm = k.toLowerCase().replace(/_/g, '');
+            if (keyNorm === 'destinationfilename') {
                 v = { DestinationFilename: v };
-            } else if (k === 'FileWatcherOptions') {
+            } else if (keyNorm === 'filewatcheroptions') {
                 v = { FileWatcherOptions: v };
             }
             ordered[k] = v;
@@ -683,6 +683,51 @@ function ensureControlMTypeFirst(obj, parentKey) {
         }
     }
     return ordered;
+}
+
+/**
+ * Pase final: corrige por contenido para que Control-M acepte el JSON.
+ * - Objetos que tienen "ModifyCase" pero no tienen "DestinationFilename" ni "Type" como primera clave -> envolver en { DestinationFilename: obj }.
+ * - Array bajo clave "FileTransfers": cada elemento debe ser { FileTransfer: ... }.
+ * - Cualquier array: objetos de una clave -> { name, value }; strings -> { name, value }.
+ */
+function fixControlMFinal(obj, parentKey) {
+    if (obj === null || obj === undefined) return obj;
+    if (Array.isArray(obj)) {
+        const out = obj.map((item) => {
+            if (item == null) return item;
+            if (typeof item === 'string') return { name: item, value: item };
+            if (typeof item === 'object' && !Array.isArray(item)) {
+                const keys = Object.keys(item);
+                if (parentKey === 'FileTransfers') {
+                    const inner = Object.prototype.hasOwnProperty.call(item, 'FileTransfer') ? item.FileTransfer : item;
+                    return { FileTransfer: fixControlMFinal(inner, null) };
+                }
+                if (keys.length === 1 && keys[0] !== 'name') return { name: keys[0], value: fixControlMFinal(item[keys[0]], null) };
+                if (keys.length === 2 && keys.includes('name') && keys.includes('value')) return { name: item.name, value: fixControlMFinal(item.value, null) };
+                return fixControlMFinal(item, null);
+            }
+            return item;
+        });
+        return out;
+    }
+    if (typeof obj !== 'object') return obj;
+    const keys = Object.keys(obj);
+    if (keys.length === 0) return obj;
+    const firstKey = keys[0];
+    const hasModifyCase = keys.includes('ModifyCase');
+    const needsDestinationFilenameWrap = hasModifyCase && firstKey !== 'Type' && firstKey !== 'DestinationFilename';
+    let result;
+    if (needsDestinationFilenameWrap) {
+        const inner = fixControlMFinal(obj, null);
+        result = { DestinationFilename: { DestinationFilename: inner } };
+    } else {
+        result = {};
+        for (const k of keys) {
+            result[k] = fixControlMFinal(obj[k], k);
+        }
+    }
+    return result;
 }
 
 /**
@@ -1648,9 +1693,12 @@ app.post('/save-json', async (req, res) => {
         // 7. Arrays con "name" y "value" donde la API lo exige (Variables, Included, Replace)
         console.log('[7] Convirtiendo arrays a formato name/value (Variables, Included, Replace)...');
         parsedJson = ensureControlMNameValueArrays(parsedJson);
-        // 8. Poner "Type" primero solo donde ya existe (Folder/Job); no añadir en anidados
-        console.log('[7] Asegurando Type como primera propiedad (solo donde existe)...');
+        // 8. Poner "Type" primero y envolver anidados (DestinationFilename, FileTransfers, FileWatcherOptions)
+        console.log('[7] Asegurando Type como primera propiedad y envolviendo anidados...');
         parsedJson = ensureControlMTypeFirst(parsedJson);
+        // 9. Pase final: corregir por contenido (ModifyCase -> DestinationFilename, FileTransfers wrap, name/value en arrays)
+        console.log('[7] Pase final Control-M (ModifyCase, FileTransfers, name/value)...');
+        parsedJson = fixControlMFinal(parsedJson);
         console.log('[7] Preparando JSON string (formato estándar con comillas dobles)...');
         const jsonString = JSON.stringify(parsedJson, null, 2);
         console.log('[7] ✅ JSON string preparado');
