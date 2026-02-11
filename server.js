@@ -602,6 +602,47 @@ function ensureAttachOutput(value) {
 }
 
 /**
+ * Control-M API exige que la primera propiedad de cada objeto sea "Type".
+ * Recorre el árbol y: (1) pone "Type" primero si existe; (2) añade "Type" desde el nombre del key padre si falta (ej. DestinationFilename, FileWatcherOptions, items de FileTransfers).
+ */
+function ensureControlMTypeFirst(obj, parentKey) {
+    if (obj === null || obj === undefined) return obj;
+    if (Array.isArray(obj)) {
+        return obj.map(item => ensureControlMTypeFirst(item, parentKey === 'FileTransfers' ? 'FileTransfer' : parentKey));
+    }
+    if (typeof obj !== 'object') return obj;
+    const keys = Object.keys(obj);
+    if (keys.length === 0) return obj;
+    const hasType = keys.includes('Type');
+    const typeValue = obj.Type;
+    let inferredType = null;
+    if (!hasType && parentKey) {
+        if (parentKey === 'FileTransfers' || parentKey === 'FileTransfer') inferredType = 'FileTransfer';
+        else if (parentKey === 'DestinationFilename') inferredType = 'DestinationFilename';
+        else if (parentKey === 'FileWatcherOptions') inferredType = 'FileWatcherOptions';
+        else if (/^[A-Z][a-zA-Z0-9_:.-]*$/.test(parentKey)) inferredType = parentKey;
+    }
+    const ordered = {};
+    if (hasType && typeof typeValue !== 'object') {
+        ordered.Type = typeValue;
+    } else if (inferredType) {
+        ordered.Type = inferredType;
+    }
+    for (const k of keys) {
+        if (k === 'Type' && ordered.Type !== undefined) continue;
+        const v = obj[k];
+        if (v != null && typeof v === 'object' && !Array.isArray(v)) {
+            ordered[k] = ensureControlMTypeFirst(v, k);
+        } else if (Array.isArray(v)) {
+            ordered[k] = v.map(item => (item != null && typeof item === 'object' ? ensureControlMTypeFirst(item, k === 'FileTransfers' ? 'FileTransfer' : k) : item));
+        } else {
+            ordered[k] = v;
+        }
+    }
+    return ordered;
+}
+
+/**
  * Normaliza el objeto para que coincida con la estructura esperada por Control-M:
  * - Variables: siempre array de objetos de una clave.
  * - RerunLimit, When, JobAFT, eventsToWaitFor: estructuras bien formadas.
@@ -1561,7 +1602,9 @@ app.post('/save-json', async (req, res) => {
             console.log('[6] ℹ️ jsonControlm ya existe o error (ignorado):', e.message);
         }
         
-        // 7. Preparar datos JSON (siempre en formato estándar: claves y valores entre comillas dobles)
+        // 7. Preparar datos JSON (Control-M exige "Type" como primera propiedad en cada objeto)
+        console.log('[7] Asegurando Type como primera propiedad (Control-M)...');
+        parsedJson = ensureControlMTypeFirst(parsedJson);
         console.log('[7] Preparando JSON string (formato estándar con comillas dobles)...');
         const jsonString = JSON.stringify(parsedJson, null, 2);
         console.log('[7] ✅ JSON string preparado');
