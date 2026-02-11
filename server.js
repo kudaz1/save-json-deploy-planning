@@ -719,7 +719,10 @@ function fixControlMFinal(obj, parentKey) {
     const needsDestinationFilenameWrap = hasModifyCase && firstKey !== 'Type' && firstKey !== 'DestinationFilename';
     let result;
     if (needsDestinationFilenameWrap) {
-        const inner = fixControlMFinal(obj, null);
+        const inner = {};
+        for (const k of keys) {
+            inner[k] = fixControlMFinal(obj[k], k);
+        }
         result = { DestinationFilename: { DestinationFilename: inner } };
     } else {
         result = {};
