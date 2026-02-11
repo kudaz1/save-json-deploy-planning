@@ -653,15 +653,11 @@ function ensureControlMTypeFirst(obj, parentKey) {
         } else if (Array.isArray(v)) {
             const keyNormArr = k.toLowerCase().replace(/_/g, '');
             const isFileTransfersArr = keyNormArr === 'filetransfers';
-            const childKey = isFileTransfersArr ? 'FileTransfer' : k;
-            ordered[k] = v.map(item => {
+            const arrProcessed = v.map(item => {
                 if (item == null || typeof item !== 'object') return item;
-                const processed = ensureControlMTypeFirst(item, childKey);
-                if (isFileTransfersArr) {
-                    return { FileTransfer: processed };
-                }
-                return processed;
+                return ensureControlMTypeFirst(item, isFileTransfersArr ? 'FileTransfer' : k);
             });
+            ordered[k] = isFileTransfersArr ? { FileTransfer: arrProcessed } : arrProcessed;
         } else {
             ordered[k] = v;
         }
@@ -672,29 +668,21 @@ function ensureControlMTypeFirst(obj, parentKey) {
 /**
  * Pase final: wrap necesario para Control-M.
  * - Objetos con "ModifyCase" sin Type/DestinationFilename primero -> envolver en { DestinationFilename: obj }.
- * - Objetos con primera clave "ABSTIME" (sin Type) -> envolver en { ABSTIME: obj } (first property must be type; no añadir Type: "ABSTIME" = unknown type).
- * - Array FileTransfers: cada elemento -> { FileTransfer: ... }.
+ * - Objetos con primera clave "ABSTIME" (sin Type) -> poner Type: "When" primero (first property must be type; ABSTIME = unknown type).
+ * - Array FileTransfers: ya se convierte en ensureControlMTypeFirst a { FileTransfer: [ ... ] }; aquí solo se recorre.
  */
 function fixControlMFinal(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
     if (typeof obj !== 'object') return obj;
     if (Array.isArray(obj)) {
-        const isFileTransfers = parentKey && String(parentKey).toLowerCase() === 'filetransfers';
-        return obj.map((item) => {
-            if (item == null || typeof item !== 'object' || Array.isArray(item)) return fixControlMFinal(item, parentKey);
-            if (isFileTransfers) {
-                const inner = Object.prototype.hasOwnProperty.call(item, 'FileTransfer') ? item.FileTransfer : item;
-                return { FileTransfer: fixControlMFinal(inner, null) };
-            }
-            return fixControlMFinal(item, parentKey);
-        });
+        return obj.map((item) => fixControlMFinal(item, parentKey));
     }
     const keys = Object.keys(obj);
     if (keys.length === 0) return obj;
     const firstKey = keys[0];
     const hasModifyCase = keys.includes('ModifyCase');
     const needsDestinationFilenameWrap = hasModifyCase && firstKey !== 'Type' && firstKey !== 'DestinationFilename';
-    const needsAbstimeWrap = firstKey === 'ABSTIME' && !keys.includes('Type');
+    const needsWhenTypeFirst = firstKey === 'ABSTIME' && !keys.includes('Type');
     let result;
     if (needsDestinationFilenameWrap) {
         const inner = {};
@@ -702,12 +690,11 @@ function fixControlMFinal(obj, parentKey) {
             inner[k] = fixControlMFinal(obj[k], k);
         }
         result = { DestinationFilename: { DestinationFilename: inner } };
-    } else if (needsAbstimeWrap) {
-        const inner = {};
+    } else if (needsWhenTypeFirst) {
+        result = { Type: 'When' };
         for (const k of keys) {
-            inner[k] = fixControlMFinal(obj[k], k);
+            result[k] = fixControlMFinal(obj[k], k);
         }
-        result = { ABSTIME: inner };
     } else {
         result = {};
         for (const k of keys) {
