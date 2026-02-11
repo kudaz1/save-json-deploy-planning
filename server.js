@@ -664,7 +664,7 @@ function ensureControlMTypeFirst(obj, parentKey) {
                     const processed = ensureControlMTypeFirst(item, 'FileTransfer');
                     fileTransferItems.push(processed);
                 }
-                ordered[k] = { FileTransfer: fileTransferItems };
+                ordered[k] = fileTransferItems;
             } else {
                 ordered[k] = v.map(item => {
                     if (item == null || typeof item !== 'object') return item;
@@ -681,8 +681,8 @@ function ensureControlMTypeFirst(obj, parentKey) {
 /**
  * Pase final: wrap necesario para Control-M.
  * - Objetos con "ModifyCase" sin Type/DestinationFilename primero -> envolver en { DestinationFilename: obj }.
- * - Objetos con primera clave "ABSTIME" -> se añade Type: "ABSTIME" como primera propiedad.
- * - FileTransfers: se emite como objeto { FileTransfer: [ ... ] } (la API exige sintaxis de objeto).
+ * - Objetos con primera clave "ABSTIME" -> se añade Type: "When" (Job When en Control-M).
+ * - FileTransfers: se emite como array de objetos [ {...}, {...} ] (formato oficial Control-M sample).
  */
 function fixControlMFinal(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
@@ -695,7 +695,7 @@ function fixControlMFinal(obj, parentKey) {
     const firstKey = keys[0];
     const hasModifyCase = keys.includes('ModifyCase');
     const needsDestinationFilenameWrap = hasModifyCase && firstKey !== 'Type' && firstKey !== 'DestinationFilename';
-    const needsABSTIMEType = firstKey === 'ABSTIME';
+    const needsWhenType = firstKey === 'ABSTIME';
     let result;
     if (needsDestinationFilenameWrap) {
         const inner = {};
@@ -704,7 +704,7 @@ function fixControlMFinal(obj, parentKey) {
         }
         result = { DestinationFilename: { DestinationFilename: inner } };
     } else {
-        result = needsABSTIMEType ? { Type: 'ABSTIME' } : {};
+        result = needsWhenType ? { Type: 'When' } : {};
         for (const k of keys) {
             result[k] = fixControlMFinal(obj[k], k);
         }
