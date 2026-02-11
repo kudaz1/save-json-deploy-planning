@@ -662,9 +662,9 @@ function ensureControlMTypeFirst(obj, parentKey) {
                         continue;
                     }
                     const processed = ensureControlMTypeFirst(item, 'FileTransfer');
-                    fileTransferItems.push({ FileTransfer: processed });
+                    fileTransferItems.push(processed);
                 }
-                ordered[k] = fileTransferItems;
+                ordered[k] = { FileTransfer: fileTransferItems };
             } else {
                 ordered[k] = v.map(item => {
                     if (item == null || typeof item !== 'object') return item;
@@ -681,8 +681,8 @@ function ensureControlMTypeFirst(obj, parentKey) {
 /**
  * Pase final: wrap necesario para Control-M.
  * - Objetos con "ModifyCase" sin Type/DestinationFilename primero -> envolver en { DestinationFilename: obj }.
- * - Objetos con primera clave "ABSTIME" (sin Type) -> no se añade Type (RuleBasedCalendars = unknown type).
- * - FileTransfers: solo elementos que no son otro Job (ej. Job:OS400) se envuelven en { FileTransfer: ... }.
+ * - Objetos con primera clave "ABSTIME" -> se añade Type: "ABSTIME" como primera propiedad.
+ * - FileTransfers: se emite como objeto { FileTransfer: [ ... ] } (la API exige sintaxis de objeto).
  */
 function fixControlMFinal(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
@@ -695,6 +695,7 @@ function fixControlMFinal(obj, parentKey) {
     const firstKey = keys[0];
     const hasModifyCase = keys.includes('ModifyCase');
     const needsDestinationFilenameWrap = hasModifyCase && firstKey !== 'Type' && firstKey !== 'DestinationFilename';
+    const needsABSTIMEType = firstKey === 'ABSTIME';
     let result;
     if (needsDestinationFilenameWrap) {
         const inner = {};
@@ -703,7 +704,7 @@ function fixControlMFinal(obj, parentKey) {
         }
         result = { DestinationFilename: { DestinationFilename: inner } };
     } else {
-        result = {};
+        result = needsABSTIMEType ? { Type: 'ABSTIME' } : {};
         for (const k of keys) {
             result[k] = fixControlMFinal(obj[k], k);
         }
