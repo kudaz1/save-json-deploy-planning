@@ -603,17 +603,12 @@ function ensureAttachOutput(value) {
 
 /**
  * Convierte arrays que Control-M exige como "name and value pair" a elementos { name, value }.
- * - Variables: [{ "tm": "%%TIME" }] -> [{ "name": "tm", "value": "%%TIME" }]
- * - Included (When.RuleBasedCalendars): objetos de una clave -> { name, value }; strings -> { name: s, value: s }
- * - Replace: objetos de una clave -> { name, value }
+ * - Cualquier array: objetos de una sola clave -> { name, value }; strings -> { name: s, value: s }.
+ * - Objetos con varias claves (ej. FileTransfers con Src, Dest) se dejan igual.
  */
 function ensureControlMNameValueArrays(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
     if (Array.isArray(obj)) {
-        const keyRequiresNameValue = parentKey === 'Variables' || parentKey === 'Included' || parentKey === 'Replace';
-        if (!keyRequiresNameValue) {
-            return obj.map((item, i) => ensureControlMNameValueArrays(item, null));
-        }
         return obj.map((item) => {
             if (item == null) return item;
             if (typeof item === 'string') {
@@ -643,15 +638,15 @@ function ensureControlMNameValueArrays(obj, parentKey) {
 }
 
 /**
- * Control-M API exige que la primera propiedad de cada objeto sea "Type" solo en Folder/Job.
- * Solo reordena para poner "Type" primero cuando YA existe (string). No añade "Type" a objetos
- * anidados (DestinationFilename, FileTransfers items, FileWatcherOptions, etc.) porque la API
- * devuelve "Type is an unknown keyword... has no object syntax" en esos casos.
+ * Control-M API: (1) En Folder/Job pone "Type" primero si existe.
+ * (2) En objetos anidados que exigen "first property must be type" (DestinationFilename,
+ * FileWatcherOptions, elementos de FileTransfers) no usa "Type" (da error), sino que envuelve
+ * el objeto en una clave con el nombre del tipo: { "DestinationFilename": { ... } }, { "FileTransfer": { ... } }.
  */
-function ensureControlMTypeFirst(obj) {
+function ensureControlMTypeFirst(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
     if (Array.isArray(obj)) {
-        return obj.map(item => ensureControlMTypeFirst(item));
+        return obj.map(item => ensureControlMTypeFirst(item, parentKey === 'FileTransfers' ? 'FileTransfer' : parentKey));
     }
     if (typeof obj !== 'object') return obj;
     const keys = Object.keys(obj);
@@ -664,11 +659,25 @@ function ensureControlMTypeFirst(obj) {
     }
     for (const k of keys) {
         if (k === 'Type' && ordered.Type !== undefined) continue;
-        const v = obj[k];
+        let v = obj[k];
         if (v != null && typeof v === 'object' && !Array.isArray(v)) {
-            ordered[k] = ensureControlMTypeFirst(v);
+            v = ensureControlMTypeFirst(v, k);
+            if (k === 'DestinationFilename') {
+                v = { DestinationFilename: v };
+            } else if (k === 'FileWatcherOptions') {
+                v = { FileWatcherOptions: v };
+            }
+            ordered[k] = v;
         } else if (Array.isArray(v)) {
-            ordered[k] = v.map(item => (item != null && typeof item === 'object' ? ensureControlMTypeFirst(item) : item));
+            const childKey = k === 'FileTransfers' ? 'FileTransfer' : k;
+            ordered[k] = v.map(item => {
+                if (item == null || typeof item !== 'object') return item;
+                const processed = ensureControlMTypeFirst(item, childKey);
+                if (k === 'FileTransfers') {
+                    return { FileTransfer: processed };
+                }
+                return processed;
+            });
         } else {
             ordered[k] = v;
         }
