@@ -1267,20 +1267,19 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
             'Authorization': `Bearer ${token}`
         };
         
-        // Log detallado de la configuración
-        console.log(`[CONTROL-M] ========================================`);
-        console.log(`[CONTROL-M] 📋 CONFIGURACIÓN DE LA LLAMADA:`);
-        console.log(`[CONTROL-M]   URL: ${controlmApiUrl}`);
-        console.log(`[CONTROL-M]   Método: POST`);
-        console.log(`[CONTROL-M]   Headers:`);
-        console.log(`[CONTROL-M]     - Content-Type: ${headers['content-type']}`);
-        console.log(`[CONTROL-M]     - Authorization: Bearer ${token.substring(0, 20)}...${token.substring(token.length - 10)}`);
-        console.log(`[CONTROL-M]   Form Data:`);
-        console.log(`[CONTROL-M]     - Field: definitionsFile`);
-        console.log(`[CONTROL-M]     - Filename: ${fileName}`);
-        console.log(`[CONTROL-M]     - Content-Type: application/json`);
-        console.log(`[CONTROL-M]     - File Path: ${filePath}`);
-        console.log(`[CONTROL-M] ========================================`);
+        // Log REQUEST completo para EC2
+        const requestLog = {
+            url: controlmApiUrl,
+            method: 'POST',
+            headers: {
+                'Content-Type': headers['content-type'],
+                'Authorization': `Bearer ${token.substring(0, 20)}...${token.substring(token.length - 10)}`
+            },
+            formData: { field: 'definitionsFile', filename: fileName, contentType: 'application/json', filePath }
+        };
+        console.log(`[CONTROL-M] ========== REQUEST ==========`);
+        console.log(`[CONTROL-M] REQUEST:`, JSON.stringify(requestLog, null, 2));
+        console.log(`[CONTROL-M] =============================`);
         
         const config = {
             headers: headers,
@@ -1302,16 +1301,14 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
         const endTime = Date.now();
         const duration = endTime - startTime;
         
-        console.log(`[CONTROL-M] ========================================`);
-        console.log(`[CONTROL-M] ✅ RESPUESTA DE CONTROL-M:`);
-        console.log(`[CONTROL-M]   Status: ${response.status} ${response.statusText || ''}`);
-        console.log(`[CONTROL-M]   Tiempo de respuesta: ${duration}ms`);
-        console.log(`[CONTROL-M]   Headers de respuesta:`, JSON.stringify(response.headers, null, 2));
-        console.log(`[CONTROL-M]   Body (primeros 500 chars):`, JSON.stringify(response.data).substring(0, 500));
-        if (JSON.stringify(response.data).length > 500) {
-            console.log(`[CONTROL-M]   ... (respuesta truncada, longitud total: ${JSON.stringify(response.data).length} chars)`);
-        }
-        console.log(`[CONTROL-M] ========================================`);
+        const responseBodyStr = JSON.stringify(response.data, null, 2);
+        const maxLogLen = 5000;
+        const responseBodyLog = responseBodyStr.length <= maxLogLen ? responseBodyStr : responseBodyStr.substring(0, maxLogLen) + '\n... (truncado, total ' + responseBodyStr.length + ' chars)';
+        console.log(`[CONTROL-M] ========== RESPONSE ==========`);
+        console.log(`[CONTROL-M] RESPONSE status: ${response.status} ${response.statusText || ''} (${duration}ms)`);
+        console.log(`[CONTROL-M] RESPONSE headers:`, JSON.stringify(response.headers));
+        console.log(`[CONTROL-M] RESPONSE body:\n${responseBodyLog}`);
+        console.log(`[CONTROL-M] ==============================`);
         
         return {
             success: true,
@@ -1338,27 +1335,19 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
             };
         }
         
-        console.error(`[CONTROL-M] ========================================`);
-        console.error(`[CONTROL-M] ❌ ERROR EJECUTANDO CONTROL-M:`);
-        console.error(`[CONTROL-M]   Mensaje: ${error.message}`);
-        console.error(`[CONTROL-M]   URL intentada: ${controlmApiUrl}`);
-        console.error(`[CONTROL-M]   Archivo: ${filePath}`);
-        
+        console.error(`[CONTROL-M] ========== ERROR ==========`);
+        console.error(`[CONTROL-M] REQUEST (que falló): URL=${controlmApiUrl} method=POST filePath=${filePath}`);
+        console.error(`[CONTROL-M] ERROR mensaje: ${error.message}`);
         if (error.response) {
-            console.error(`[CONTROL-M]   Status: ${error.response.status} ${error.response.statusText || ''}`);
-            console.error(`[CONTROL-M]   Headers de respuesta:`, JSON.stringify(error.response.headers, null, 2));
-            console.error(`[CONTROL-M]   Body de error:`, JSON.stringify(error.response.data, null, 2));
+            console.error(`[CONTROL-M] RESPONSE (error) status: ${error.response.status} ${error.response.statusText || ''}`);
+            console.error(`[CONTROL-M] RESPONSE (error) headers:`, JSON.stringify(error.response.headers));
+            console.error(`[CONTROL-M] RESPONSE (error) body:`, JSON.stringify(error.response.data, null, 2));
         } else if (error.request) {
-            console.error(`[CONTROL-M]   No se recibió respuesta del servidor`);
-            console.error(`[CONTROL-M]   Request config:`, JSON.stringify({
-                url: controlmApiUrl,
-                method: 'POST',
-                headers: error.config?.headers ? Object.keys(error.config.headers) : 'N/A'
-            }, null, 2));
+            console.error(`[CONTROL-M] RESPONSE: no se recibió respuesta del servidor`);
         } else {
-            console.error(`[CONTROL-M]   Error de configuración:`, error.message);
+            console.error(`[CONTROL-M] Error de configuración:`, error.message);
         }
-        console.error(`[CONTROL-M] ========================================`);
+        console.error(`[CONTROL-M] ===========================`);
         
         return {
             success: false,
