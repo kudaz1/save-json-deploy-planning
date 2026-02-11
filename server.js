@@ -652,8 +652,8 @@ function ensureControlMTypeFirst(obj, parentKey) {
             ordered[k] = v;
         } else if (Array.isArray(v)) {
             const keyNormArr = k.toLowerCase().replace(/_/g, '');
-            const isFileTransfersArr = keyNormArr === 'filetransfers';
-            if (isFileTransfersArr) {
+            const isFileTransfersList = keyNormArr === 'filetransfers' || keyNormArr === 'filetransfer';
+            if (isFileTransfersList) {
                 const fileTransferItems = [];
                 for (const item of v) {
                     if (item == null || typeof item !== 'object') continue;
@@ -664,7 +664,9 @@ function ensureControlMTypeFirst(obj, parentKey) {
                     const processed = ensureControlMTypeFirst(item, 'FileTransfer');
                     fileTransferItems.push(processed);
                 }
-                ordered[k] = fileTransferItems;
+                const fileTransferObj = {};
+                fileTransferItems.forEach((item, i) => { fileTransferObj[String(i)] = { FileTransfer: item }; });
+                ordered['FileTransfers'] = fileTransferObj;
             } else {
                 ordered[k] = v.map(item => {
                     if (item == null || typeof item !== 'object') return item;
@@ -681,8 +683,8 @@ function ensureControlMTypeFirst(obj, parentKey) {
 /**
  * Pase final: wrap necesario para Control-M.
  * - Objetos con "ModifyCase" sin Type/DestinationFilename primero -> envolver en { DestinationFilename: obj }.
- * - Objetos con primera clave "ABSTIME" -> se añade Type: "When" (Job When en Control-M).
- * - FileTransfers: se emite como array de objetos [ {...}, {...} ] (formato oficial Control-M sample).
+ * - Objetos con primera clave "ABSTIME" -> se aplana: Type "When" + contenido interno (sin clave ABSTIME).
+ * - FileTransfers: se emite como objeto { "0": { FileTransfer: {...} }, "1": { FileTransfer: {...} } } (sintaxis objeto).
  */
 function fixControlMFinal(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
@@ -695,7 +697,7 @@ function fixControlMFinal(obj, parentKey) {
     const firstKey = keys[0];
     const hasModifyCase = keys.includes('ModifyCase');
     const needsDestinationFilenameWrap = hasModifyCase && firstKey !== 'Type' && firstKey !== 'DestinationFilename';
-    const needsWhenType = firstKey === 'ABSTIME';
+    const isABSTIMEObject = firstKey === 'ABSTIME';
     let result;
     if (needsDestinationFilenameWrap) {
         const inner = {};
@@ -703,8 +705,15 @@ function fixControlMFinal(obj, parentKey) {
             inner[k] = fixControlMFinal(obj[k], k);
         }
         result = { DestinationFilename: { DestinationFilename: inner } };
+    } else if (isABSTIMEObject) {
+        const inner = fixControlMFinal(obj.ABSTIME, 'When');
+        result = { Type: 'When', ...(typeof inner === 'object' && inner !== null ? inner : {}) };
+        for (const k of keys) {
+            if (k === 'ABSTIME') continue;
+            result[k] = fixControlMFinal(obj[k], k);
+        }
     } else {
-        result = needsWhenType ? { Type: 'When' } : {};
+        result = {};
         for (const k of keys) {
             result[k] = fixControlMFinal(obj[k], k);
         }
@@ -1495,12 +1504,7 @@ app.post('/save-json', async (req, res) => {
         const requestCapturePath = path.join(requestStoragePath, 'request-' + requestTimestamp + '.json');
         try {
             fs.mkdirSync(requestStoragePath, { recursive: true });
-            const bodyToSave = { ...req.body };
-            if (bodyToSave.token && typeof bodyToSave.token === 'string') {
-                bodyToSave.token = bodyToSave.token.substring(0, 8) + '...' + bodyToSave.token.substring(bodyToSave.token.length - 4);
-            }
-            bodyToSave._capturedAt = new Date().toISOString();
-            fs.writeFileSync(requestCapturePath, JSON.stringify(bodyToSave, null, 2), 'utf8');
+            fs.writeFileSync(requestCapturePath, JSON.stringify(req.body, null, 2), 'utf8');
             console.log('[1.5] ✅ Request guardado (siempre):', requestCapturePath);
         } catch (requestErr) {
             console.error('[1.5] ⚠️ No se pudo guardar el request:', requestErr.message);
