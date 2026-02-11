@@ -602,8 +602,9 @@ function ensureAttachOutput(value) {
 }
 
 /**
- * Convierte arrays que Control-M exige como "name and value pair" a elementos { name, value }.
- * - Cualquier array: objetos de una sola clave -> { name, value }; strings -> { name: s, value: s }.
+ * Convierte arrays que Control-M exige como "name and value pair" (mismo parseo que GENER_NEXUS-DEMOGRAFICO-CARLOS).
+ * - Solo elementos que son OBJETOS de una clave (ej. Variables: [{ "tm": "%%TIME" }]) -> { name, value }.
+ * - Arrays de strings (ej. When.WeekDays: ["MON","TUE"]) se dejan igual.
  * - Objetos con varias claves (ej. FileTransfers con Src, Dest) se dejan igual.
  */
 function ensureControlMNameValueArrays(obj, parentKey) {
@@ -611,9 +612,7 @@ function ensureControlMNameValueArrays(obj, parentKey) {
     if (Array.isArray(obj)) {
         return obj.map((item) => {
             if (item == null) return item;
-            if (typeof item === 'string') {
-                return { name: item, value: item };
-            }
+            if (typeof item === 'string') return item;
             if (typeof item === 'object' && !Array.isArray(item)) {
                 const keys = Object.keys(item);
                 if (keys.length === 1 && keys[0] !== 'name') {
@@ -686,17 +685,17 @@ function ensureControlMTypeFirst(obj, parentKey) {
 }
 
 /**
- * Pase final: corrige por contenido para que Control-M acepte el JSON.
- * - Objetos que tienen "ModifyCase" pero no tienen "DestinationFilename" ni "Type" como primera clave -> envolver en { DestinationFilename: obj }.
- * - Array bajo clave "FileTransfers": cada elemento debe ser { FileTransfer: ... }.
- * - Cualquier array: objetos de una clave -> { name, value }; strings -> { name, value }.
+ * Pase final: mismo parseo que GENER_NEXUS-DEMOGRAFICO-CARLOS; corrige por contenido para Control-M.
+ * - Objetos con "ModifyCase" sin Type/DestinationFilename primero -> envolver en { DestinationFilename: obj }.
+ * - Array FileTransfers: cada elemento -> { FileTransfer: ... }.
+ * - Arrays: solo objetos de una clave -> { name, value }; strings sin cambiar (When.WeekDays, MonthDays).
  */
 function fixControlMFinal(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
     if (Array.isArray(obj)) {
         const out = obj.map((item) => {
             if (item == null) return item;
-            if (typeof item === 'string') return { name: item, value: item };
+            if (typeof item === 'string') return item;
             if (typeof item === 'object' && !Array.isArray(item)) {
                 const keys = Object.keys(item);
                 if (parentKey === 'FileTransfers') {
@@ -1652,7 +1651,12 @@ app.post('/save-json', async (req, res) => {
         }
         console.log('[4] Filename final:', fileName);
 
-        // ===== LÓGICA DE GUARDADO (IDÉNTICA AL SCRIPT QUE FUNCIONA) =====
+        // ===== LÓGICA DE GUARDADO: MISMO PARSEO PARA TODOS LOS JSON (como GENER_NEXUS-DEMOGRAFICO-CARLOS) =====
+        // Todo jsonData (string Java/Map o objeto JSON) pasa por el mismo pipeline: normalize -> name/value -> Type -> fixControlMFinal.
+        
+        // 4.5 Normalizar estructura Control-M (Variables, When, RerunLimit, JobAFT, eventsToWaitFor) para todos
+        console.log('[4.5] Normalizando estructura Control-M (mismo parseo para todos)...');
+        parsedJson = normalizeControlMStructure(parsedJson);
         
         // 5. Obtener rutas (en Linux/EC2 usar carpeta del proyecto para que guardado y Control-M usen el mismo archivo)
         console.log('[5] Obteniendo rutas...');
@@ -1694,13 +1698,13 @@ app.post('/save-json', async (req, res) => {
         }
         
         // 7. Arrays con "name" y "value" donde la API lo exige (Variables, Included, Replace)
-        console.log('[7] Convirtiendo arrays a formato name/value (Variables, Included, Replace)...');
+        console.log('[7] Convirtiendo arrays a formato name/value (objetos de una clave; strings sin cambiar)...');
         parsedJson = ensureControlMNameValueArrays(parsedJson);
-        // 8. Poner "Type" primero y envolver anidados (DestinationFilename, FileTransfers, FileWatcherOptions)
-        console.log('[7] Asegurando Type como primera propiedad y envolviendo anidados...');
+        // 8. Type primero donde exista; envolver anidados (DestinationFilename, FileTransfers, FileWatcherOptions)
+        console.log('[7] Asegurando Type primero y envolviendo anidados...');
         parsedJson = ensureControlMTypeFirst(parsedJson);
-        // 9. Pase final: corregir por contenido (ModifyCase -> DestinationFilename, FileTransfers wrap, name/value en arrays)
-        console.log('[7] Pase final Control-M (ModifyCase, FileTransfers, name/value)...');
+        // 9. Pase final: mismo parseo que GENER_NEXUS-DEMOGRAFICO-CARLOS (ModifyCase, FileTransfers, name/value en objetos)
+        console.log('[7] Pase final Control-M (mismo parseo para todos los JSON)...');
         parsedJson = fixControlMFinal(parsedJson);
         console.log('[7] Preparando JSON string (formato estándar con comillas dobles)...');
         const jsonString = JSON.stringify(parsedJson, null, 2);
