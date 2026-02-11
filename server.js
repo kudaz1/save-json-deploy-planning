@@ -602,39 +602,73 @@ function ensureAttachOutput(value) {
 }
 
 /**
- * Control-M API exige que la primera propiedad de cada objeto sea "Type".
- * Recorre el árbol y: (1) pone "Type" primero si existe; (2) añade "Type" desde el nombre del key padre si falta (ej. DestinationFilename, FileWatcherOptions, items de FileTransfers).
+ * Convierte arrays que Control-M exige como "name and value pair" a elementos { name, value }.
+ * - Variables: [{ "tm": "%%TIME" }] -> [{ "name": "tm", "value": "%%TIME" }]
+ * - Included (When.RuleBasedCalendars): objetos de una clave -> { name, value }; strings -> { name: s, value: s }
+ * - Replace: objetos de una clave -> { name, value }
  */
-function ensureControlMTypeFirst(obj, parentKey) {
+function ensureControlMNameValueArrays(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
     if (Array.isArray(obj)) {
-        return obj.map(item => ensureControlMTypeFirst(item, parentKey === 'FileTransfers' ? 'FileTransfer' : parentKey));
+        const keyRequiresNameValue = parentKey === 'Variables' || parentKey === 'Included' || parentKey === 'Replace';
+        if (!keyRequiresNameValue) {
+            return obj.map((item, i) => ensureControlMNameValueArrays(item, null));
+        }
+        return obj.map((item) => {
+            if (item == null) return item;
+            if (typeof item === 'string') {
+                return { name: item, value: item };
+            }
+            if (typeof item === 'object' && !Array.isArray(item)) {
+                const keys = Object.keys(item);
+                if (keys.length === 1 && keys[0] !== 'name') {
+                    return { name: keys[0], value: ensureControlMNameValueArrays(item[keys[0]], null) };
+                }
+                if (keys.length === 2 && keys.includes('name') && keys.includes('value')) {
+                    return { name: item.name, value: ensureControlMNameValueArrays(item.value, null) };
+                }
+                if (keys.length >= 1) {
+                    return Object.fromEntries(keys.map(k => [k, ensureControlMNameValueArrays(item[k], k)]));
+                }
+            }
+            return item;
+        });
+    }
+    if (typeof obj !== 'object') return obj;
+    const result = {};
+    for (const [k, v] of Object.entries(obj)) {
+        result[k] = ensureControlMNameValueArrays(v, k);
+    }
+    return result;
+}
+
+/**
+ * Control-M API exige que la primera propiedad de cada objeto sea "Type" solo en Folder/Job.
+ * Solo reordena para poner "Type" primero cuando YA existe (string). No añade "Type" a objetos
+ * anidados (DestinationFilename, FileTransfers items, FileWatcherOptions, etc.) porque la API
+ * devuelve "Type is an unknown keyword... has no object syntax" en esos casos.
+ */
+function ensureControlMTypeFirst(obj) {
+    if (obj === null || obj === undefined) return obj;
+    if (Array.isArray(obj)) {
+        return obj.map(item => ensureControlMTypeFirst(item));
     }
     if (typeof obj !== 'object') return obj;
     const keys = Object.keys(obj);
     if (keys.length === 0) return obj;
     const hasType = keys.includes('Type');
     const typeValue = obj.Type;
-    let inferredType = null;
-    if (!hasType && parentKey) {
-        if (parentKey === 'FileTransfers' || parentKey === 'FileTransfer') inferredType = 'FileTransfer';
-        else if (parentKey === 'DestinationFilename') inferredType = 'DestinationFilename';
-        else if (parentKey === 'FileWatcherOptions') inferredType = 'FileWatcherOptions';
-        else if (/^[A-Z][a-zA-Z0-9_:.-]*$/.test(parentKey)) inferredType = parentKey;
-    }
     const ordered = {};
-    if (hasType && typeof typeValue !== 'object') {
+    if (hasType && typeof typeValue === 'string') {
         ordered.Type = typeValue;
-    } else if (inferredType) {
-        ordered.Type = inferredType;
     }
     for (const k of keys) {
         if (k === 'Type' && ordered.Type !== undefined) continue;
         const v = obj[k];
         if (v != null && typeof v === 'object' && !Array.isArray(v)) {
-            ordered[k] = ensureControlMTypeFirst(v, k);
+            ordered[k] = ensureControlMTypeFirst(v);
         } else if (Array.isArray(v)) {
-            ordered[k] = v.map(item => (item != null && typeof item === 'object' ? ensureControlMTypeFirst(item, k === 'FileTransfers' ? 'FileTransfer' : k) : item));
+            ordered[k] = v.map(item => (item != null && typeof item === 'object' ? ensureControlMTypeFirst(item) : item));
         } else {
             ordered[k] = v;
         }
@@ -1602,8 +1636,11 @@ app.post('/save-json', async (req, res) => {
             console.log('[6] ℹ️ jsonControlm ya existe o error (ignorado):', e.message);
         }
         
-        // 7. Preparar datos JSON (Control-M exige "Type" como primera propiedad en cada objeto)
-        console.log('[7] Asegurando Type como primera propiedad (Control-M)...');
+        // 7. Arrays con "name" y "value" donde la API lo exige (Variables, Included, Replace)
+        console.log('[7] Convirtiendo arrays a formato name/value (Variables, Included, Replace)...');
+        parsedJson = ensureControlMNameValueArrays(parsedJson);
+        // 8. Poner "Type" primero solo donde ya existe (Folder/Job); no añadir en anidados
+        console.log('[7] Asegurando Type como primera propiedad (solo donde existe)...');
         parsedJson = ensureControlMTypeFirst(parsedJson);
         console.log('[7] Preparando JSON string (formato estándar con comillas dobles)...');
         const jsonString = JSON.stringify(parsedJson, null, 2);
