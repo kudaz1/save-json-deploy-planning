@@ -687,26 +687,30 @@ function ensureControlMTypeFirst(obj, parentKey) {
 /**
  * Pase final: mismo parseo que GENER_NEXUS-DEMOGRAFICO-CARLOS; corrige por contenido para Control-M.
  * - Objetos con "ModifyCase" sin Type/DestinationFilename primero -> envolver en { DestinationFilename: obj }.
+ * - Objetos con primera clave "ABSTIME" (sin Type) -> poner Type: "ABSTIME" primero (first property must be type).
  * - Array FileTransfers: cada elemento -> { FileTransfer: ... }.
- * - Arrays: solo objetos de una clave -> { name, value }; strings sin cambiar (When.WeekDays, MonthDays).
+ * - Arrays: objetos de una clave -> { name, value }; objetos de varias claves -> explotar a varios { name, value }; strings sin cambiar.
  */
 function fixControlMFinal(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
     if (Array.isArray(obj)) {
-        const out = obj.map((item) => {
-            if (item == null) return item;
-            if (typeof item === 'string') return item;
+        const out = obj.flatMap((item) => {
+            if (item == null) return [item];
+            if (typeof item === 'string') return [item];
             if (typeof item === 'object' && !Array.isArray(item)) {
                 const keys = Object.keys(item);
                 if (parentKey === 'FileTransfers') {
                     const inner = Object.prototype.hasOwnProperty.call(item, 'FileTransfer') ? item.FileTransfer : item;
-                    return { FileTransfer: fixControlMFinal(inner, null) };
+                    return [{ FileTransfer: fixControlMFinal(inner, null) }];
                 }
-                if (keys.length === 1 && keys[0] !== 'name') return { name: keys[0], value: fixControlMFinal(item[keys[0]], null) };
-                if (keys.length === 2 && keys.includes('name') && keys.includes('value')) return { name: item.name, value: fixControlMFinal(item.value, null) };
-                return fixControlMFinal(item, null);
+                if (keys.length === 1 && keys[0] !== 'name') return [{ name: keys[0], value: fixControlMFinal(item[keys[0]], null) }];
+                if (keys.length === 2 && keys.includes('name') && keys.includes('value')) return [{ name: item.name, value: fixControlMFinal(item.value, null) }];
+                if (keys.length > 1) {
+                    return keys.map((k) => ({ name: k, value: fixControlMFinal(item[k], null) }));
+                }
+                return [fixControlMFinal(item, null)];
             }
-            return item;
+            return [item];
         });
         return out;
     }
@@ -716,6 +720,7 @@ function fixControlMFinal(obj, parentKey) {
     const firstKey = keys[0];
     const hasModifyCase = keys.includes('ModifyCase');
     const needsDestinationFilenameWrap = hasModifyCase && firstKey !== 'Type' && firstKey !== 'DestinationFilename';
+    const needsAbstimeTypeFirst = firstKey === 'ABSTIME' && !keys.includes('Type');
     let result;
     if (needsDestinationFilenameWrap) {
         const inner = {};
@@ -723,6 +728,11 @@ function fixControlMFinal(obj, parentKey) {
             inner[k] = fixControlMFinal(obj[k], k);
         }
         result = { DestinationFilename: { DestinationFilename: inner } };
+    } else if (needsAbstimeTypeFirst) {
+        result = { Type: 'ABSTIME' };
+        for (const k of keys) {
+            result[k] = fixControlMFinal(obj[k], k);
+        }
     } else {
         result = {};
         for (const k of keys) {
