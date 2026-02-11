@@ -1826,6 +1826,16 @@ app.post('/save-json', async (req, res) => {
             response.jsonDataBeforeSave = jsonDataBeforeSave;
         }
         
+        // Guardar el response en la misma ruta que el request (jsonControlm)
+        try {
+            const responseCapturePath = path.join(requestStoragePath, 'response-' + requestTimestamp + '.json');
+            const responseToSave = { ...response, _sentAt: new Date().toISOString() };
+            fs.writeFileSync(responseCapturePath, JSON.stringify(responseToSave, null, 2), 'utf8');
+            console.log('[RESPONSE] ✅ Response guardado:', responseCapturePath);
+        } catch (responseErr) {
+            console.error('[RESPONSE] ⚠️ No se pudo guardar el response:', responseErr.message);
+        }
+        
         res.json(response);
 
     } catch (error) {
@@ -1833,12 +1843,21 @@ app.post('/save-json', async (req, res) => {
         console.error('Error:', error.message);
         console.error('Code:', error.code);
         console.error('Stack:', error.stack);
-        res.status(500).json({
+        const errorResponse = {
             success: false,
             error: 'Error al guardar el archivo',
             details: error.message,
-            code: error.code
-        });
+            code: error.code,
+            _sentAt: new Date().toISOString()
+        };
+        try {
+            const requestStoragePathErr = path.resolve(__dirname, 'jsonControlm');
+            const responseTimestampErr = new Date().toISOString().replace(/[:.]/g, '-');
+            fs.mkdirSync(requestStoragePathErr, { recursive: true });
+            fs.writeFileSync(path.join(requestStoragePathErr, 'response-' + responseTimestampErr + '.json'), JSON.stringify(errorResponse, null, 2), 'utf8');
+            console.log('[RESPONSE] ✅ Response (error) guardado: response-' + responseTimestampErr + '.json');
+        } catch (e) { /* ignore */ }
+        res.status(500).json(errorResponse);
     }
 });
 
