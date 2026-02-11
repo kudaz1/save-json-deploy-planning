@@ -1378,6 +1378,23 @@ app.post('/save-json', async (req, res) => {
         console.log('[1] Content-Type:', req.headers['content-type']);
         console.log('[1] Content-Length:', req.headers['content-length']);
         
+        // 1.5 Guardar el request SIEMPRE (incluso si falla después), en la misma ruta donde se guardan los JSON
+        const requestStoragePath = path.resolve(__dirname, 'jsonControlm');
+        const requestTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const requestCapturePath = path.join(requestStoragePath, 'request-' + requestTimestamp + '.json');
+        try {
+            fs.mkdirSync(requestStoragePath, { recursive: true });
+            const bodyToSave = { ...req.body };
+            if (bodyToSave.token && typeof bodyToSave.token === 'string') {
+                bodyToSave.token = bodyToSave.token.substring(0, 8) + '...' + bodyToSave.token.substring(bodyToSave.token.length - 4);
+            }
+            bodyToSave._capturedAt = new Date().toISOString();
+            fs.writeFileSync(requestCapturePath, JSON.stringify(bodyToSave, null, 2), 'utf8');
+            console.log('[1.5] ✅ Request guardado (siempre):', requestCapturePath);
+        } catch (requestErr) {
+            console.error('[1.5] ⚠️ No se pudo guardar el request:', requestErr.message);
+        }
+        
         // 2. Validaciones básicas (trim para valores enviados desde Jira u otros con espacios)
         let { ambiente, token, filename, jsonData, controlm_api, script_path, returnJsonDataBeforeSave } = req.body;
         ambiente = ambiente != null ? String(ambiente).trim() : '';
@@ -1576,6 +1593,26 @@ app.post('/save-json', async (req, res) => {
                 console.error('[8] Code:', writeError.code);
                 throw writeError;
             }
+        }
+        
+        // 8.5 Guardar el request que llegó a la API en la misma ruta (para inspección)
+        const requestBasename = path.basename(fileName, '.json');
+        const requestFilePath = path.resolve(storagePath, 'request-' + requestBasename + '.json');
+        try {
+            const requestToSave = {
+                timestamp: new Date().toISOString(),
+                ambiente: req.body.ambiente,
+                token: req.body.token ? req.body.token.substring(0, 8) + '...' + req.body.token.substring(req.body.token.length - 4) : undefined,
+                filename: req.body.filename,
+                controlm_api: req.body.controlm_api,
+                script_path: req.body.script_path,
+                returnJsonDataBeforeSave: req.body.returnJsonDataBeforeSave,
+                jsonData: req.body.jsonData
+            };
+            fs.writeFileSync(requestFilePath, JSON.stringify(requestToSave, null, 2), 'utf8');
+            console.log('[8.5] ✅ Request guardado en:', requestFilePath);
+        } catch (requestWriteErr) {
+            console.log('[8.5] ⚠️ No se pudo guardar el request (ignorado):', requestWriteErr.message);
         }
         
         // 9. VERIFICAR INMEDIATAMENTE
