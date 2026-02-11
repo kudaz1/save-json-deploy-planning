@@ -653,22 +653,14 @@ function ensureControlMTypeFirst(obj, parentKey) {
         } else if (Array.isArray(v)) {
             const keyNormArr = k.toLowerCase().replace(/_/g, '');
             const isFileTransfersArr = keyNormArr === 'filetransfers';
-            if (isFileTransfersArr) {
-                const objOut = {};
-                v.forEach((item, i) => {
-                    if (item == null || typeof item !== 'object') {
-                        objOut[String(i)] = item;
-                    } else {
-                        objOut[String(i)] = { FileTransfer: ensureControlMTypeFirst(item, 'FileTransfer') };
-                    }
-                });
-                ordered[k] = objOut;
-            } else {
-                ordered[k] = v.map(item => {
-                    if (item == null || typeof item !== 'object') return item;
-                    return ensureControlMTypeFirst(item, k);
-                });
-            }
+            ordered[k] = v.map(item => {
+                if (item == null || typeof item !== 'object') return item;
+                const processed = ensureControlMTypeFirst(item, isFileTransfersArr ? 'FileTransfer' : k);
+                if (isFileTransfersArr) {
+                    return { FileTransfer: processed };
+                }
+                return processed;
+            });
         } else {
             ordered[k] = v;
         }
@@ -680,7 +672,7 @@ function ensureControlMTypeFirst(obj, parentKey) {
  * Pase final: wrap necesario para Control-M.
  * - Objetos con "ModifyCase" sin Type/DestinationFilename primero -> envolver en { DestinationFilename: obj }.
  * - Objetos con primera clave "ABSTIME" (sin Type) -> poner Type primero (first property must be type); valor Type = "RuleBasedCalendars".
- * - FileTransfers: en ensureControlMTypeFirst se convierte a objeto { "0": { FileTransfer: ... }, "1": ... }.
+ * - FileTransfers: array de { FileTransfer: ... } (revertido objeto con "0","1" = "0 is an unknown keyword").
  */
 function fixControlMFinal(obj, parentKey) {
     if (obj === null || obj === undefined) return obj;
