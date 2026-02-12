@@ -162,11 +162,90 @@ function normalizeControlMParsedData(data) {
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '50mb', strict: false }));
+app.use(express.json({
+    limit: '50mb',
+    strict: false,
+    verify: (req, res, buf, encoding) => {
+        try {
+            req.rawBody = buf.toString(encoding || 'utf8');
+        } catch {
+            req.rawBody = undefined;
+        }
+    }
+}));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Sanitiza JSON potencialmente inválido por caracteres de control dentro de strings.
+// Corrige casos comunes como saltos de línea "reales" dentro de un string (deben ser \\n en JSON).
+function sanitizePossiblyInvalidJson(raw) {
+    if (typeof raw !== 'string' || raw.length === 0) return raw;
+    let out = '';
+    let inString = false;
+    let escaped = false;
+    for (let idx = 0; idx < raw.length; idx++) {
+        const ch = raw[idx];
+        if (!inString) {
+            if (ch === '"') inString = true;
+            out += ch;
+            continue;
+        }
+
+        // Estamos dentro de string JSON ("...") y debemos escapar control chars.
+        if (escaped) {
+            // JSON no soporta \', convertir a '
+            if (ch === "'") {
+                out += "'";
+            } else {
+                out += ch;
+            }
+            escaped = false;
+            continue;
+        }
+
+        if (ch === '\\') {
+            out += ch;
+            escaped = true;
+            continue;
+        }
+        if (ch === '"') {
+            out += ch;
+            inString = false;
+            continue;
+        }
+
+        // Convertir saltos de línea/tab reales dentro de strings
+        if (ch === '\r') {
+            // Consumir \r\n como un solo \\n
+            if (raw[idx + 1] === '\n') idx++;
+            out += '\\n';
+            continue;
+        }
+        if (ch === '\n') { out += '\\n'; continue; }
+        if (ch === '\t') { out += '\\t'; continue; }
+
+        // Remover otros control chars ASCII (0x00-0x1F)
+        const code = ch.charCodeAt(0);
+        if (code >= 0 && code < 0x20) continue;
+
+        out += ch;
+    }
+    return out;
+}
 
 // Middleware para capturar errores de parsing JSON
 app.use((error, req, res, next) => {
+    // Si el JSON del body falla por caracteres de control (p. ej. saltos de línea en strings),
+    // intentamos sanitizar el body crudo y re-parsear para no rechazar la petición.
+    if (error instanceof SyntaxError && typeof req.rawBody === 'string' && req.rawBody.length) {
+        try {
+            const sanitized = sanitizePossiblyInvalidJson(req.rawBody);
+            req.body = JSON.parse(sanitized);
+            return next();
+        } catch {
+            // continúa al error estándar
+        }
+    }
+
     if (error instanceof SyntaxError || error.message.includes('JSON')) {
         console.error('========================================');
         console.error('ERROR DE PARSING JSON');
