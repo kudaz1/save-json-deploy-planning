@@ -735,13 +735,18 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
         // Leer el archivo desde el sistema de archivos
         console.log(`[CONTROL-M] Leyendo archivo desde: ${filePath}`);
         const fileStream = fs.createReadStream(filePath);
+        fileStream.on('error', (e) => {
+            console.error(`[CONTROL-M] Error leyendo archivo stream: ${e.message}`);
+        });
         
         // Crear form-data con el stream del archivo
         console.log(`[CONTROL-M] Creando form-data...`);
         const form = new FormData();
         form.append('definitionsFile', fileStream, {
             filename: fileName,
-            contentType: 'application/json'
+            contentType: 'application/json',
+            // Ayuda a form-data/axios a calcular Content-Length correctamente (evita chunked)
+            knownLength: fileStats ? fileStats.size : undefined
         });
         
         // Guardar metadata del form-data para diagnóstico
@@ -758,7 +763,8 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
         console.log(`[CONTROL-M] Configurando headers...`);
         const headers = {
             ...form.getHeaders(),
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
         };
 
         // Algunos servidores rechazan multipart con Transfer-Encoding: chunked.
@@ -767,7 +773,7 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
             const contentLength = await new Promise((resolve, reject) => {
                 form.getLength((err, length) => (err ? reject(err) : resolve(length)));
             });
-            headers['Content-Length'] = contentLength;
+            headers['Content-Length'] = String(contentLength);
             console.log(`[CONTROL-M] Content-Length calculado: ${contentLength}`);
         } catch (lenErr) {
             console.warn(`[CONTROL-M] No se pudo calcular Content-Length del form-data: ${lenErr.message}`);
@@ -787,7 +793,8 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
             method: 'POST',
             headers: {
                 'Content-Type': headers['content-type'],
-                'Authorization': `Bearer ${token.substring(0, 20)}...${token.substring(token.length - 10)}`
+                'Authorization': `Bearer ${token.substring(0, 20)}...${token.substring(token.length - 10)}`,
+                'Content-Length': headers['Content-Length'] || 'NO'
             },
             formData: { field: 'definitionsFile', filename: fileName, contentType: 'application/json', filePath }
         };
