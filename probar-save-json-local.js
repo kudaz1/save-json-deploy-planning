@@ -12,7 +12,8 @@ const body = JSON.stringify({
   ambiente: 'QA',
   token: 'token-ejemplo',
   filename: 'test-local-' + Date.now(),
-  jsonData: '{"GENER_TEST={Type=SimpleFolder, CC1040P2={RerunLimit={Every=0}, JobAFT={Y=1}}}}',
+  controlm_api: 'https://10.21.61.63:8446/automation-api/deploy',
+  jsonData: '{GENER_TEST={Type=SimpleFolder, CC1040P2={RerunLimit={Every=0}, JobAFT={Y=1}}}}',
 });
 
 const options = {
