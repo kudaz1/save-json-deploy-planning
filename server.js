@@ -664,6 +664,16 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
             filename: fileName,
             contentType: 'application/json'
         });
+        
+        // Guardar metadata del form-data para diagnóstico
+        if (lastControlMCall) {
+            lastControlMCall.formData = {
+                field: 'definitionsFile',
+                filename: fileName,
+                contentType: 'application/json',
+                filePath
+            };
+        }
 
         // Configurar headers con Bearer token
         console.log(`[CONTROL-M] Configurando headers...`);
@@ -671,6 +681,26 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
             ...form.getHeaders(),
             'Authorization': `Bearer ${token}`
         };
+
+        // Algunos servidores rechazan multipart con Transfer-Encoding: chunked.
+        // Forzamos Content-Length (curl lo envía; axios a veces no).
+        try {
+            const contentLength = await new Promise((resolve, reject) => {
+                form.getLength((err, length) => (err ? reject(err) : resolve(length)));
+            });
+            headers['Content-Length'] = contentLength;
+            console.log(`[CONTROL-M] Content-Length calculado: ${contentLength}`);
+        } catch (lenErr) {
+            console.warn(`[CONTROL-M] No se pudo calcular Content-Length del form-data: ${lenErr.message}`);
+        }
+
+        if (lastControlMCall) {
+            lastControlMCall.requestHeaders = {
+                'Content-Type': headers['content-type'],
+                'Authorization': token ? `Bearer ${token.substring(0, 20)}...${token.substring(token.length - 10)}` : 'NO'
+            };
+            if (headers['Content-Length'] != null) lastControlMCall.requestHeaders['Content-Length'] = headers['Content-Length'];
+        }
         
         // Log REQUEST completo para EC2
         const requestLog = {
@@ -705,6 +735,16 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
         const response = await axios.post(controlmApiUrl, form, config);
         const endTime = Date.now();
         const duration = endTime - startTime;
+        
+        if (lastControlMCall) {
+            lastControlMCall.status = 'success';
+            lastControlMCall.finishedAt = new Date().toISOString();
+            lastControlMCall.response = {
+                status: response.status,
+                statusText: response.statusText || '',
+                durationMs: duration
+            };
+        }
         
         const responseBodyStr = JSON.stringify(response.data, null, 2);
         const maxLogLen = 5000;
@@ -781,7 +821,7 @@ app.post("/save-json", async (req, res) => {
         if (!ambiente || !token || !filename || !controlm_api || jsonData == null) {
             return res.status(400).json({ status: "error", message: "Faltan campos obligatorios: ambiente, token, filename, controlm_api, jsonData" });
         }
-        if (!controlm_api.startsWith("http")) {
+        if (!/^https?:\/\//i.test(controlm_api)) {
             return res.status(400).json({ status: "error", message: "El campo controlm_api debe ser una URL válida (ej: https://controlms1de01:8446/automation-api/deploy)" });
         }
         if (typeof jsonData !== "string" && typeof jsonData !== "object") {
@@ -841,6 +881,7 @@ app.post("/save-json", async (req, res) => {
             storagePath,
             savedToDesktop: desktopWriteOk,
             fallbackUsed,
+            controlm_api,
             controlMResult
         });
     } catch (err) {
@@ -966,7 +1007,7 @@ app.post('/execute-controlm', async (req, res) => {
         }
         
         // Validar que controlm_api sea una URL válida
-        if (!controlm_api.startsWith('http')) {
+        if (!/^https?:\/\//i.test(controlm_api)) {
             return res.status(400).json({
                 success: false,
                 error: 'El campo "controlm_api" debe ser una URL válida (ej: https://controlms1de01:8446/automation-api/deploy)'
@@ -1083,7 +1124,7 @@ app.post('/save-and-execute', async (req, res) => {
         
         // 2. Ejecutar Control-M usando el archivo guardado (si se proporciona controlm_api)
         let controlMResult = null;
-        if (controlm_api && controlm_api.startsWith('http')) {
+        if (controlm_api && /^https?:\/\//i.test(controlm_api)) {
             try {
                 controlMResult = await executeControlMApi(controlm_api, token, filePath);
                 console.log('✅ Control-M ejecutado exitosamente');
