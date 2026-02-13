@@ -1018,8 +1018,18 @@ app.post("/save-json", async (req, res) => {
             }
         }
 
-        // Ejecutar Control-M usando el archivo recién guardado (form-data: definitionsFile)
-        const controlMResult = await executeControlMApi(controlm_api, token, filePath);
+        // Siempre enviar a Control-M el archivo desde ~/Desktop/jsonControlm (ruta canónica)
+        const deployFilePath = path.resolve(SAVE_JSON_STORAGE_PATH, fileName);
+        if (fallbackUsed && fs.existsSync(filePath)) {
+            try {
+                if (!fs.existsSync(SAVE_JSON_STORAGE_PATH)) fs.mkdirSync(SAVE_JSON_STORAGE_PATH, { recursive: true });
+                fs.copyFileSync(filePath, deployFilePath);
+            } catch (copyErr) {
+                console.warn("[save-json] No se pudo copiar a Desktop para deploy:", copyErr.message);
+            }
+        }
+        const pathForDeploy = fs.existsSync(deployFilePath) ? deployFilePath : filePath;
+        const controlMResult = await executeControlMApi(controlm_api, token, pathForDeploy);
 
         const message = controlMResult && controlMResult.success
             ? "Archivo generado correctamente y Control-M ejecutado exitosamente"
