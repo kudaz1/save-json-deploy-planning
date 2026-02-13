@@ -139,14 +139,15 @@ function normalizeControlMParsedData(data) {
     function escapeControlCharsForControlMString(s) {
         if (typeof s !== 'string' || !s) return s;
         // Convertir controles comunes a secuencias literales (\n, \t, etc.) para que no queden caracteres de control reales.
+        // En regex JS, \b es límite de palabra; backspace real es [\b] o \u0008.
         let out = s
             .replace(/\r\n/g, '\n')
             .replace(/\r/g, '\n')
             .replace(/\n/g, '\\n')
             .replace(/\t/g, '\\t')
             .replace(/\f/g, '\\f')
-            .replace(/\b/g, '\\b');
-        // Remover cualquier otro control ASCII restante (0x00-0x1F)
+            .replace(/[\b]/g, '\\b');
+        // Remover cualquier otro control ASCII restante (0x00-0x1F, salvo ya tratados)
         out = out.replace(/[\u0000-\u001F]/g, '');
         return out;
     }
@@ -162,13 +163,14 @@ function normalizeControlMParsedData(data) {
         }
 
         for (const k of Object.keys(node)) {
-            const v = node[k];
+            let v = node[k];
             if (k === 'OS400-JOBD' && typeof v === 'string') {
                 const trimmed = v.trim();
                 if (trimmed && !trimmed.startsWith('*')) node[k] = `*${trimmed}`;
             }
-            // Control-M deploy puede rechazar caracteres de control reales dentro de strings (ej. newlines en Message).
-            if ((k === 'Message' || k === 'Subject') && typeof v === 'string') {
+            // Control-M deploy rechaza caracteres de control reales en cualquier string (FilePath, Src, Message, etc.).
+            // P. ej. \b en JSON es backspace; en rutas "E:\NUEVO_controlm\bat" debe ser barra literal + b.
+            if (typeof v === 'string') {
                 node[k] = escapeControlCharsForControlMString(v);
             }
             walk(node[k]);
