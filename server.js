@@ -193,8 +193,63 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+function isHexDigit(c) {
+    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+}
+
+// Corrige secuencias de escape inválidas en JSON (ej. E:\NUEVO -> E:\\NUEVO, \c -> \\c).
+// En JSON solo son válidos: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX.
+function fixInvalidJsonEscapes(raw) {
+    if (typeof raw !== 'string' || raw.length === 0) return raw;
+    let out = '';
+    let inString = false;
+    let i = 0;
+    while (i < raw.length) {
+        const ch = raw[i];
+        if (!inString) {
+            if (ch === '"') inString = true;
+            out += ch;
+            i++;
+            continue;
+        }
+        if (ch === '\\') {
+            const next = raw[i + 1];
+            if (next === undefined) {
+                out += ch;
+                i++;
+                continue;
+            }
+            if (next === 'u') {
+                const hex = raw.slice(i + 2, i + 6);
+                if (hex.length === 4 && hex.split('').every(isHexDigit)) {
+                    out += raw.slice(i, i + 6);
+                    i += 6;
+                    continue;
+                }
+            }
+            if (next === '"' || next === '\\' || next === '/' || next === 'b' || next === 'f' || next === 'n' || next === 'r' || next === 't') {
+                out += ch + next;
+                i += 2;
+                continue;
+            }
+            out += '\\\\' + next;
+            i += 2;
+            continue;
+        }
+        if (ch === '"') {
+            inString = false;
+            out += ch;
+            i++;
+            continue;
+        }
+        out += ch;
+        i++;
+    }
+    return out;
+}
+
 // Sanitiza JSON potencialmente inválido por caracteres de control dentro de strings.
-// Corrige casos comunes como saltos de línea "reales" dentro de un string (deben ser \\n en JSON).
+// Corrige saltos de línea/tab reales dentro de strings (deben ser \\n en JSON).
 function sanitizePossiblyInvalidJson(raw) {
     if (typeof raw !== 'string' || raw.length === 0) return raw;
     let out = '';
@@ -207,19 +262,12 @@ function sanitizePossiblyInvalidJson(raw) {
             out += ch;
             continue;
         }
-
-        // Estamos dentro de string JSON ("...") y debemos escapar control chars.
         if (escaped) {
-            // JSON no soporta \', convertir a '
-            if (ch === "'") {
-                out += "'";
-            } else {
-                out += ch;
-            }
+            if (ch === "'") out += "'";
+            else out += ch;
             escaped = false;
             continue;
         }
-
         if (ch === '\\') {
             out += ch;
             escaped = true;
@@ -230,21 +278,15 @@ function sanitizePossiblyInvalidJson(raw) {
             inString = false;
             continue;
         }
-
-        // Convertir saltos de línea/tab reales dentro de strings
         if (ch === '\r') {
-            // Consumir \r\n como un solo \\n
             if (raw[idx + 1] === '\n') idx++;
             out += '\\n';
             continue;
         }
         if (ch === '\n') { out += '\\n'; continue; }
         if (ch === '\t') { out += '\\t'; continue; }
-
-        // Remover otros control chars ASCII (0x00-0x1F)
         const code = ch.charCodeAt(0);
         if (code >= 0 && code < 0x20) continue;
-
         out += ch;
     }
     return out;
@@ -252,15 +294,21 @@ function sanitizePossiblyInvalidJson(raw) {
 
 // Middleware para capturar errores de parsing JSON
 app.use((error, req, res, next) => {
-    // Si el JSON del body falla por caracteres de control (p. ej. saltos de línea en strings),
-    // intentamos sanitizar el body crudo y re-parsear para no rechazar la petición.
+    // Si el JSON del body falla (Bad escaped character, control chars, etc.),
+    // intentamos corregir el body crudo y re-parsear.
     if (error instanceof SyntaxError && typeof req.rawBody === 'string' && req.rawBody.length) {
         try {
-            const sanitized = sanitizePossiblyInvalidJson(req.rawBody);
-            req.body = JSON.parse(sanitized);
+            let bodyStr = fixInvalidJsonEscapes(req.rawBody);
+            req.body = JSON.parse(bodyStr);
             return next();
         } catch {
-            // continúa al error estándar
+            try {
+                const sanitized = sanitizePossiblyInvalidJson(fixInvalidJsonEscapes(req.rawBody));
+                req.body = JSON.parse(sanitized);
+                return next();
+            } catch {
+                // continúa al error estándar
+            }
         }
     }
 
