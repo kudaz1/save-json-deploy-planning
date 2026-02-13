@@ -800,21 +800,25 @@ async function executeControlMApi(controlmApiUrl, token, filePath) {
         
         console.log(`[CONTROL-M] Archivo verificado que existe`);
         
-        // Leer el archivo desde el sistema de archivos
-        console.log(`[CONTROL-M] Leyendo archivo desde: ${filePath}`);
-        const fileStream = fs.createReadStream(filePath);
-        fileStream.on('error', (e) => {
-            console.error(`[CONTROL-M] Error leyendo archivo stream: ${e.message}`);
-        });
+        // Leer archivo, normalizar (escapar caracteres de control en todos los strings) y enviar ese contenido.
+        // Así se corrige también si el archivo en disco fue guardado antes del fix (p. ej. \b en FilePath).
+        console.log(`[CONTROL-M] Leyendo y normalizando archivo desde: ${filePath}`);
+        let fileContent = fs.readFileSync(filePath, 'utf8');
+        let payloadToSend = fileContent;
+        try {
+            const parsed = JSON.parse(fileContent);
+            normalizeControlMParsedData(parsed);
+            payloadToSend = JSON.stringify(parsed, null, 2);
+        } catch (parseErr) {
+            console.warn(`[CONTROL-M] No se pudo parsear/normalizar el JSON, se envía archivo tal cual: ${parseErr.message}`);
+        }
+        const buffer = Buffer.from(payloadToSend, 'utf8');
         
-        // Crear form-data con el stream del archivo
-        console.log(`[CONTROL-M] Creando form-data...`);
         const form = new FormData();
-        form.append('definitionsFile', fileStream, {
+        form.append('definitionsFile', buffer, {
             filename: fileName,
             contentType: 'application/json',
-            // Ayuda a form-data/axios a calcular Content-Length correctamente (evita chunked)
-            knownLength: fileStats ? fileStats.size : undefined
+            knownLength: buffer.length
         });
         
         // Guardar metadata del form-data para diagnóstico
